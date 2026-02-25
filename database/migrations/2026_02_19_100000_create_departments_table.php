@@ -12,7 +12,7 @@ return new class extends Migration
             Schema::create('departments', function (Blueprint $table) {
                 $table->id();
                 $table->string('name');
-                $table->string('payroll_frequency'); // WEEKLY / SEMI_MONTHLY / MONTHLY
+                $table->string('payroll_frequency')->nullable(); // WEEKLY / SEMI_MONTHLY / MONTHLY
                 $table->boolean('is_active')->default(true);
                 $table->softDeletes();
                 $table->timestamps();

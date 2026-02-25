@@ -39,9 +39,18 @@ class EmployeeSeeder extends Seeder
             ['employee_code' => 'JC2025-16', 'department' => 'CT Print Stop', 'full_name' => 'LEURAG, ALORNA MANANGKI'],
         ];
 
-        // Create or get departments
+        // Create or get departments with work schedules
         $departments = [];
         $uniqueDepartments = array_unique(array_column($employees, 'department'));
+
+        // Define work schedule times for each department
+        $departmentSchedules = [
+            'Shop' => ['start' => '08:00:00', 'end' => '17:00:00'],
+            'Ecotrade' => ['start' => '08:30:00', 'end' => '17:30:00'],
+            'JCT' => ['start' => '09:00:00', 'end' => '18:00:00'],
+            'CT Print Stop' => ['start' => '08:30:00', 'end' => '17:30:00'],
+            'Shop / Eco' => ['start' => '08:30:00', 'end' => '17:30:00'],
+        ];
 
         foreach ($uniqueDepartments as $deptName) {
             // Use DB facade to avoid soft deletes scope issues
@@ -58,6 +67,22 @@ class EmployeeSeeder extends Seeder
                     'updated_at' => now(),
                 ]);
                 $departments[$deptName] = $id;
+
+                // Create work schedule for this department
+                $schedule = $departmentSchedules[$deptName] ?? ['start' => '08:00:00', 'end' => '17:00:00'];
+                DB::table('work_schedules')->insert([
+                    'department_id' => $id,
+                    'name' => $deptName . ' Schedule', // Auto-generate name from department
+                    'work_start_time' => $schedule['start'],
+                    'work_end_time' => $schedule['end'],
+                    'break_start_time' => '12:00:00',
+                    'break_end_time' => '13:00:00',
+                    'grace_period_minutes' => 15,
+                    'is_working_day' => true,
+                    'half_day_hours' => 4,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
             } else {
                 $departments[$deptName] = $department->id;
             }

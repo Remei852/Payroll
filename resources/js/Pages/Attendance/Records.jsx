@@ -1,569 +1,594 @@
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head, Link } from '@inertiajs/react';
-import { useMemo, useState } from 'react';
+import { Head, router, usePage } from '@inertiajs/react';
+import { useState, useRef } from 'react';
 
-const dummySummary = [
-    {
-        id: 1,
-        employee: 'Juan Dela Cruz',
-        department: 'Engineering',
-        workdaysRendered: 10,
-        totalAbsences: 0,
-        totalLateMinutes: 35,
-        totalUndertimeMinutes: 0,
-        totalOvertimeMinutes: 120,
-        totalMissedLogs: 0,
-    },
-    {
-        id: 2,
-        employee: 'Maria Santos',
-        department: 'HR',
-        workdaysRendered: 9,
-        totalAbsences: 1,
-        totalLateMinutes: 0,
-        totalUndertimeMinutes: 30,
-        totalOvertimeMinutes: 0,
-        totalMissedLogs: 2,
-    },
-    {
-        id: 3,
-        employee: 'Pedro Reyes',
-        department: 'Finance',
-        workdaysRendered: 8.5,
-        totalAbsences: 0.5,
-        totalLateMinutes: 60,
-        totalUndertimeMinutes: 15,
-        totalOvertimeMinutes: 45,
-        totalMissedLogs: 1,
-    },
-    {
-        id: 4,
-        employee: 'Ana Garcia',
-        department: 'Operations',
-        workdaysRendered: 11,
-        totalAbsences: 0,
-        totalLateMinutes: 0,
-        totalUndertimeMinutes: 0,
-        totalOvertimeMinutes: 0,
-        totalMissedLogs: 0,
-    },
-];
+export default function AttendanceRecords() {
+    const { flash, attendanceSummary, dateRange } = usePage().props;
+    const fileInputRef = useRef(null);
+    const [uploading, setUploading] = useState(false);
+    const [selectedEmployee, setSelectedEmployee] = useState(null);
+    const [showDetailModal, setShowDetailModal] = useState(false);
+    const [filters, setFilters] = useState({
+        search: '',
+        department: '',
+        status: '',
+        dateFrom: '',
+        dateTo: '',
+    });
 
-const dummyDetailsByEmployee = {
-    1: [
-        {
-            id: 1,
-            date: '2026-02-01',
-            timeInAm: '08:10',
-            timeOutLunch: '12:00',
-            timeInPm: '13:00',
-            timeOutPm: '17:05',
-            lateAmMinutes: 10,
-            latePmMinutes: 0,
-            totalLateMinutes: 10,
-            overtimeMinutes: 5,
-            status: 'Late',
-            missingLogs: false,
-        },
-        {
-            id: 2,
-            date: '2026-02-02',
-            timeInAm: '08:00',
-            timeOutLunch: '12:00',
-            timeInPm: '13:00',
-            timeOutPm: '17:30',
-            lateAmMinutes: 0,
-            latePmMinutes: 0,
-            totalLateMinutes: 0,
-            overtimeMinutes: 30,
-            status: 'Complete',
-            missingLogs: false,
-        },
-    ],
-    2: [
-        {
-            id: 3,
-            date: '2026-02-01',
-            timeInAm: null,
-            timeOutLunch: null,
-            timeInPm: null,
-            timeOutPm: null,
-            lateAmMinutes: 0,
-            latePmMinutes: 0,
-            totalLateMinutes: 0,
-            overtimeMinutes: 0,
-            status: 'Absent (whole day)',
-            missingLogs: true,
-        },
-        {
-            id: 4,
-            date: '2026-02-02',
-            timeInAm: '08:00',
-            timeOutLunch: '12:00',
-            timeInPm: '13:20',
-            timeOutPm: '17:00',
-            lateAmMinutes: 0,
-            latePmMinutes: 20,
-            totalLateMinutes: 20,
-            overtimeMinutes: 0,
-            status: 'Late PM',
-            missingLogs: false,
-        },
-    ],
-    3: [
-        {
-            id: 5,
-            date: '2026-02-01',
-            timeInAm: '08:30',
-            timeOutLunch: '12:00',
-            timeInPm: '13:00',
-            timeOutPm: '17:00',
-            lateAmMinutes: 30,
-            latePmMinutes: 0,
-            totalLateMinutes: 30,
-            overtimeMinutes: 0,
-            status: 'Late AM',
-            missingLogs: false,
-        },
-        {
-            id: 6,
-            date: '2026-02-02',
-            timeInAm: '08:00',
-            timeOutLunch: '12:00',
-            timeInPm: null,
-            timeOutPm: '17:00',
-            lateAmMinutes: 0,
-            latePmMinutes: 0,
-            totalLateMinutes: 0,
-            overtimeMinutes: 0,
-            status: 'Absent PM',
-            missingLogs: true,
-        },
-    ],
-    4: [
-        {
-            id: 7,
-            date: '2026-02-01',
-            timeInAm: '08:00',
-            timeOutLunch: '12:00',
-            timeInPm: '13:00',
-            timeOutPm: '17:00',
-            lateAmMinutes: 0,
-            latePmMinutes: 0,
-            totalLateMinutes: 0,
-            overtimeMinutes: 0,
-            status: 'Complete',
-            missingLogs: false,
-        },
-    ],
-};
+    function handleUploadClick() {
+        fileInputRef.current?.click();
+    }
 
-function formatMinutesToTime(totalMinutes) {
-    if (!totalMinutes || totalMinutes <= 0) return '00:00';
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-}
+    function handleFileChange(e) {
+        const file = e.target.files[0];
+        if (!file) return;
 
-function getSummaryRowClass(record) {
-    if (record.totalMissedLogs > 0) return 'bg-red-50';
-    if (record.totalLateMinutes > 0) return 'bg-orange-50';
-    return '';
-}
+        // Validate file type
+        if (!file.name.endsWith('.csv')) {
+            alert('Please select a CSV file');
+            return;
+        }
 
-function getDetailRowClass(row) {
-    if (row.missingLogs) return 'bg-red-50';
-    if (row.totalLateMinutes > 0) return 'bg-orange-50';
-    return '';
-}
+        // Auto-upload
+        const formData = new FormData();
+        formData.append('file', file);
+        setUploading(true);
 
-function FilterSelect({ label, value, onChange, options }) {
-    return (
-        <div>
-            <label className="mb-1 block text-xs font-medium text-slate-600">{label}</label>
-            <select
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
-            >
-                {options.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                    </option>
-                ))}
-            </select>
-        </div>
-    );
-}
-
-export default function Records() {
-    const [period, setPeriod] = useState('');
-    const [department, setDepartment] = useState('');
-    const [employee, setEmployee] = useState('');
-    const [dateFrom, setDateFrom] = useState('');
-    const [dateTo, setDateTo] = useState('');
-    const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
-
-    const filteredSummary = useMemo(() => {
-        return dummySummary.filter((item) => {
-            if (department && item.department.toLowerCase() !== department.toLowerCase()) return false;
-            if (employee && !item.employee.toLowerCase().includes(employee.toLowerCase())) return false;
-            return true;
+        router.post(route('admin.attendance.store-upload'), formData, {
+            onFinish: () => {
+                setUploading(false);
+                // Reset file input
+                if (fileInputRef.current) {
+                    fileInputRef.current.value = '';
+                }
+            },
         });
-    }, [department, employee]);
+    }
 
-    const selectedEmployee = useMemo(
-        () => filteredSummary.find((e) => e.id === selectedEmployeeId) || null,
-        [filteredSummary, selectedEmployeeId],
-    );
+    // Get unique departments for filter
+    const departments = attendanceSummary 
+        ? [...new Set(attendanceSummary.map(emp => emp.department))].sort()
+        : [];
 
-    const selectedDetails = useMemo(() => {
-        if (!selectedEmployeeId) return [];
-        // In a real implementation you would also filter by payroll period and date range here
-        return dummyDetailsByEmployee[selectedEmployeeId] || [];
-    }, [selectedEmployeeId]);
+    // Filter employees based on search and filters
+    const filteredEmployees = attendanceSummary ? attendanceSummary.filter(emp => {
+        // Search filter (name or code)
+        if (filters.search) {
+            const searchLower = filters.search.toLowerCase();
+            const matchesSearch = 
+                emp.employee_name.toLowerCase().includes(searchLower) ||
+                emp.employee_code.toLowerCase().includes(searchLower);
+            if (!matchesSearch) return false;
+        }
+
+        // Department filter
+        if (filters.department && emp.department !== filters.department) {
+            return false;
+        }
+
+        // Status filter (check if any record has this status)
+        if (filters.status) {
+            const hasStatus = emp.records.some(record => 
+                record.status.toLowerCase().includes(filters.status.toLowerCase())
+            );
+            if (!hasStatus) return false;
+        }
+
+        // Date range filter
+        if (filters.dateFrom || filters.dateTo) {
+            const hasRecordInRange = emp.records.some(record => {
+                const recordDate = new Date(record.attendance_date);
+                const fromDate = filters.dateFrom ? new Date(filters.dateFrom) : null;
+                const toDate = filters.dateTo ? new Date(filters.dateTo) : null;
+
+                if (fromDate && recordDate < fromDate) return false;
+                if (toDate && recordDate > toDate) return false;
+                return true;
+            });
+            if (!hasRecordInRange) return false;
+        }
+
+        return true;
+    }).map(emp => {
+        // If date filters are active, recalculate summary statistics for the filtered date range
+        if (filters.dateFrom || filters.dateTo) {
+            const filteredRecords = emp.records.filter(record => {
+                const recordDate = new Date(record.attendance_date);
+                const fromDate = filters.dateFrom ? new Date(filters.dateFrom) : null;
+                const toDate = filters.dateTo ? new Date(filters.dateTo) : null;
+
+                if (fromDate && recordDate < fromDate) return false;
+                if (toDate && recordDate > toDate) return false;
+                return true;
+            });
+
+            // Recalculate totals based on filtered records
+            const totalWorkdays = filteredRecords.reduce((sum, r) => sum + (parseFloat(r.workday_rendered) || 0), 0);
+            const totalAbsences = filteredRecords.filter(r => r.status === 'Absent').length;
+            const halfDayCount = filteredRecords.filter(r => r.status.includes('Half Day')).length;
+            const totalAbsenceDays = totalAbsences + (halfDayCount * 0.5);
+            const totalLateMinutes = filteredRecords.reduce((sum, r) => sum + (r.total_late_minutes || 0), 0);
+            const totalOvertimeMinutes = filteredRecords.reduce((sum, r) => sum + (r.overtime_minutes || 0), 0);
+            const totalMissedLogs = filteredRecords.filter(r => r.missed_logs_count > 0 && r.status !== 'Absent').length;
+            const lateFrequency = filteredRecords.filter(r => r.total_late_minutes > 0).length;
+
+            return {
+                ...emp,
+                total_workdays: totalWorkdays.toFixed(2),
+                total_absences: totalAbsenceDays,
+                total_late_minutes: totalLateMinutes,
+                total_overtime_minutes: totalOvertimeMinutes,
+                total_missed_logs: totalMissedLogs,
+                late_frequency: lateFrequency,
+                records: filteredRecords
+            };
+        }
+
+        return emp;
+    }) : [];
+
+    function clearFilters() {
+        setFilters({
+            search: '',
+            department: '',
+            status: '',
+            dateFrom: '',
+            dateTo: '',
+        });
+    }
+
+    function getRowColorClass(emp) {
+        // Priority 1: Missing logs - RED
+        if (emp.total_missed_logs > 0) {
+            return 'bg-red-50 hover:bg-red-100';
+        }
+        // Priority 2: Has lates - ORANGE
+        if (emp.late_frequency > 0 || emp.total_late_minutes > 0) {
+            return 'bg-orange-50 hover:bg-orange-100';
+        }
+        // Priority 3: Complete/Normal - WHITE (default)
+        return 'hover:bg-slate-50';
+    }
+
+    function formatTime(minutes) {
+        if (!minutes || minutes === 0) return '00:00';
+        const hours = Math.floor(Math.abs(minutes) / 60);
+        const mins = Math.abs(minutes) % 60;
+        return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+    }
+
+    function viewDetails(employee) {
+        // Records are already filtered by the main filter logic
+        // Just sort them by date in ascending order (oldest first)
+        const sortedRecords = [...employee.records].sort((a, b) => {
+            return new Date(a.attendance_date) - new Date(b.attendance_date);
+        });
+        
+        setSelectedEmployee({
+            ...employee,
+            records: sortedRecords
+        });
+        setShowDetailModal(true);
+    }
+
+    function closeModal() {
+        setShowDetailModal(false);
+        setSelectedEmployee(null);
+    }
+
+    function getStatusBadge(status) {
+        // Handle multiple statuses (e.g., "Late, Undertime")
+        const statusParts = status.split(',').map(s => s.trim());
+        
+        return (
+            <div className="flex flex-wrap gap-1">
+                {statusParts.map((part, idx) => {
+                    const badges = {
+                        'Present': 'bg-green-100 text-green-700',
+                        'Late': 'bg-yellow-100 text-yellow-700',
+                        'Absent': 'bg-red-100 text-red-700',
+                        'Half Day': 'bg-orange-100 text-orange-700',
+                        'Undertime': 'bg-purple-100 text-purple-700',
+                        'Missed Log': 'bg-pink-100 text-pink-700',
+                        'Present - Holiday': 'bg-blue-100 text-blue-700',
+                        'Absent - Holiday': 'bg-slate-100 text-slate-700',
+                        'Absent - Holiday Pay': 'bg-slate-100 text-slate-700',
+                        'Present - Sunday Work': 'bg-indigo-100 text-indigo-700',
+                        'Present - Unauthorized Work Day': 'bg-amber-100 text-amber-700',
+                    };
+
+                    return (
+                        <span 
+                            key={idx}
+                            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${badges[part] || 'bg-slate-100 text-slate-600'}`}
+                        >
+                            {part}
+                        </span>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    function getDetailRowColorClass(record) {
+        const status = record.status.toLowerCase();
+        
+        // Priority 1: Missing logs - RED
+        if (record.missed_logs_count > 0 || status.includes('missed log')) {
+            return 'bg-red-50';
+        }
+        // Priority 2: Has lates - ORANGE
+        if (status.includes('late') || record.total_late_minutes > 0) {
+            return 'bg-orange-50';
+        }
+        // Priority 3: Complete/Normal - WHITE (default)
+        return 'hover:bg-slate-50';
+    }
 
     return (
-        <AdminLayout title="Attendance">
-            <Head title="Attendance" />
+        <AdminLayout title="Attendance Records">
+            <Head title="Attendance Records" />
 
-            <div className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        Filter by
-                    </div>
-                    <Link
-                        href={route('admin.attendance.upload-logs')}
-                        className="inline-flex items-center gap-1.5 rounded-md bg-[#1E3A8A] px-3 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-[#1E3A8A]/90"
-                    >
-                        <svg
-                            className="h-4 w-4"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            aria-hidden="true"
-                        >
-                            <path
-                                fillRule="evenodd"
-                                d="M10 3a.75.75 0 01.75.75V11h3.5a.75.75 0 010 1.5h-3.5v3.75a.75.75 0 01-1.5 0V12.5h-3.5a.75.75 0 010-1.5h3.5V3.75A.75.75 0 0110 3z"
-                                clipRule="evenodd"
-                            />
-                        </svg>
-                        <span>Upload Logs</span>
-                    </Link>
+            <div className="mb-6 flex items-center justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-[#334155]">Attendance Records</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                        Upload CSV files to process attendance data
+                    </p>
+                    {dateRange && dateRange.start && dateRange.end && (
+                        <div className="mt-2 inline-flex items-center gap-2 rounded-md bg-blue-50 px-3 py-1.5 text-sm">
+                            <svg className="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span className="font-medium text-blue-900">
+                                Data Range: {dateRange.start_formatted} - {dateRange.end_formatted}
+                            </span>
+                            <span className="text-blue-700">
+                                ({dateRange.total_days} days)
+                            </span>
+                        </div>
+                    )}
                 </div>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FilterSelect
-                        label="Payroll Period"
-                        value={period}
-                        onChange={setPeriod}
-                        options={[
-                            { value: '', label: 'All Periods' },
-                            { value: '2026-02-01', label: 'Feb 1–15, 2026' },
-                            { value: '2026-01-16', label: 'Jan 16–31, 2026' },
-                        ]}
-                    />
-                    <FilterSelect
-                        label="Department"
-                        value={department}
-                        onChange={setDepartment}
-                        options={[
-                            { value: '', label: 'All Departments' },
-                            { value: 'Engineering', label: 'Engineering' },
-                            { value: 'HR', label: 'HR' },
-                            { value: 'Finance', label: 'Finance' },
-                            { value: 'Operations', label: 'Operations' },
-                        ]}
-                    />
+                <div className="flex items-center gap-3">
+                    <button
+                        type="button"
+                        onClick={handleUploadClick}
+                        disabled={uploading}
+                        className="inline-flex items-center gap-2 rounded-md bg-[#1E3A8A] px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[#1E3A8A]/90 disabled:opacity-50"
+                    >
+                        {uploading ? (
+                            <>
+                                <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                </svg>
+                                <span>Processing...</span>
+                            </>
+                        ) : (
+                            <>
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                <span>Upload CSV</span>
+                            </>
+                        )}
+                    </button>
+                </div>
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={handleFileChange}
+                    className="hidden"
+                />
+            </div>
+
+            {flash?.success && (
+                <div className="mb-4 rounded-md border border-green-200 bg-green-50 p-4">
+                    <p className="text-sm font-medium text-green-800">{flash.success.message}</p>
+                    {flash.success.uploadResults && (
+                        <div className="mt-2 text-xs text-green-700">
+                            <p>Uploaded: {flash.success.uploadResults.success} logs</p>
+                            {flash.success.uploadResults.errors > 0 && (
+                                <p>Errors: {flash.success.uploadResults.errors}</p>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {flash?.errors?.file && (
+                <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-4">
+                    <p className="text-sm font-medium text-red-800">{flash.errors.file}</p>
+                </div>
+            )}
+
+            {/* Filters Section */}
+            <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-700">Filters</h3>
+                    <button
+                        onClick={clearFilters}
+                        className="text-xs text-[#1E3A8A] hover:underline"
+                    >
+                        Clear All
+                    </button>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <div>
                         <label className="mb-1 block text-xs font-medium text-slate-600">
-                            Employee
+                            Search Employee
                         </label>
                         <input
                             type="text"
-                            placeholder="Type employee name"
-                            value={employee}
-                            onChange={(e) => setEmployee(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
+                            value={filters.search}
+                            onChange={(e) => setFilters({...filters, search: e.target.value})}
+                            placeholder="Name or Code"
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
                         />
                     </div>
                     <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">Date From</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Department
+                        </label>
+                        <select
+                            value={filters.department}
+                            onChange={(e) => setFilters({...filters, department: e.target.value})}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
+                        >
+                            <option value="">All Departments</option>
+                            {departments.map(dept => (
+                                <option key={dept} value={dept}>{dept}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Status
+                        </label>
+                        <select
+                            value={filters.status}
+                            onChange={(e) => setFilters({...filters, status: e.target.value})}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
+                        >
+                            <option value="">All Status</option>
+                            <option value="Present">Present</option>
+                            <option value="Late">Late</option>
+                            <option value="Absent">Absent</option>
+                            <option value="Half Day">Half Day</option>
+                            <option value="Undertime">Undertime</option>
+                            <option value="Missed Log">Missed Log</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Date From
+                        </label>
                         <input
                             type="date"
-                            value={dateFrom}
-                            onChange={(e) => setDateFrom(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
+                            value={filters.dateFrom}
+                            onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
                         />
                     </div>
                     <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">Date To</label>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Date To
+                        </label>
                         <input
                             type="date"
-                            value={dateTo}
-                            onChange={(e) => setDateTo(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
+                            value={filters.dateTo}
+                            onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
                         />
                     </div>
                 </div>
+                <div className="mt-3 text-xs text-slate-500">
+                    Showing {filteredEmployees.length} of {attendanceSummary?.length || 0} employees
+                </div>
             </div>
 
-            <div className="mb-3 flex items-center gap-4 text-xs text-slate-500">
-                <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-3 w-3 rounded-sm border border-red-300 bg-red-100" />
-                    Red – Missing Logs
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-3 w-3 rounded-sm border border-orange-300 bg-orange-100" />
-                    Orange – Has Lates
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <span className="inline-block h-3 w-3 rounded-sm border border-slate-300 bg-white" />
-                    Normal – Complete
-                </span>
-            </div>
-
-            <div className="mb-6 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-                <table className="min-w-full text-left text-sm">
-                    <thead className="bg-[#1E3A8A] text-xs uppercase text-white">
-                        <tr>
-                            <th className="px-4 py-3 font-medium">Employee</th>
-                            <th className="px-4 py-3 font-medium">Department</th>
-                            <th className="px-4 py-3 font-medium">Workday Rendered</th>
-                            <th className="px-4 py-3 font-medium">Total Absences</th>
-                            <th className="px-4 py-3 font-medium">Total Late (HH:MM)</th>
-                            <th className="px-4 py-3 font-medium">Total Undertime</th>
-                            <th className="px-4 py-3 font-medium">Total Overtime</th>
-                            <th className="px-4 py-3 font-medium">Total Missed Logs</th>
-                            <th className="px-4 py-3 font-medium">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {filteredSummary.map((item) => (
-                            <tr
-                                key={item.id}
-                                className={`${getSummaryRowClass(item)} transition hover:bg-slate-50`}
-                            >
-                                <td className="whitespace-nowrap px-4 py-3 font-medium text-slate-900">
-                                    {item.employee}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
-                                    {item.department}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                    {item.workdaysRendered}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                    {item.totalAbsences}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3">
-                                    <span
-                                        className={
-                                            item.totalLateMinutes > 0
-                                                ? 'font-semibold text-[#F59E0B]'
-                                                : 'text-slate-400'
-                                        }
-                                    >
-                                        {formatMinutesToTime(item.totalLateMinutes)}
-                                    </span>
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3">
-                                    {item.totalUndertimeMinutes > 0 ? (
-                                        <span className="font-medium text-slate-700">
-                                            {formatMinutesToTime(item.totalUndertimeMinutes)}
-                                        </span>
-                                    ) : (
-                                        <span className="text-slate-400">00:00</span>
-                                    )}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3">
-                                    {item.totalOvertimeMinutes > 0 ? (
-                                        <span className="font-medium text-slate-700">
-                                            {formatMinutesToTime(item.totalOvertimeMinutes)}
-                                        </span>
-                                    ) : (
-                                        <span className="text-slate-400">00:00</span>
-                                    )}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3">
-                                    {item.totalMissedLogs > 0 ? (
-                                        <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                                            {item.totalMissedLogs}
-                                        </span>
-                                    ) : (
-                                        <span className="text-slate-400">0</span>
-                                    )}
-                                </td>
-                                <td className="whitespace-nowrap px-4 py-3">
-                                    <div className="flex items-center gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setSelectedEmployeeId(item.id)}
-                                            className="rounded bg-[#1E3A8A] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#1E3A8A]/80"
-                                        >
-                                            View
-                                        </button>
-                                        {(item.totalMissedLogs > 0 || item.totalLateMinutes > 0) && (
-                                            <button
-                                                type="button"
-                                                className="rounded bg-[#F59E0B] px-2.5 py-1 text-xs font-medium text-white transition hover:bg-[#F59E0B]/80"
-                                            >
-                                                Generate Letter
-                                            </button>
-                                        )}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                        {filteredSummary.length === 0 && (
+            {/* Summary Table */}
+            {attendanceSummary && attendanceSummary.length > 0 ? (
+                <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <table className="min-w-full text-left text-sm">
+                        <thead className="bg-[#1E3A8A] text-xs uppercase text-white">
                             <tr>
-                                <td
-                                    colSpan={9}
-                                    className="px-4 py-6 text-center text-sm text-slate-500"
-                                >
-                                    No attendance records found for the selected filters.
-                                </td>
+                                <th className="px-4 py-3 font-medium">Employee</th>
+                                <th className="px-4 py-3 font-medium">Department</th>
+                                <th className="px-4 py-3 font-medium text-center">Workday Rendered</th>
+                                <th className="px-4 py-3 font-medium text-center">Total Absences</th>
+                                <th className="px-4 py-3 font-medium text-center">Total Late (HH:MM)</th>
+                                <th className="px-4 py-3 font-medium text-center">Total Undertime</th>
+                                <th className="px-4 py-3 font-medium text-center">Total Overtime</th>
+                                <th className="px-4 py-3 font-medium text-center">Total Missed Logs</th>
+                                <th className="px-4 py-3 font-medium text-center">Action</th>
                             </tr>
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {filteredEmployees.map((emp) => (
+                                <tr key={emp.employee_id} className={`transition ${getRowColorClass(emp)}`}>
+                                    <td className="whitespace-nowrap px-4 py-3">
+                                        <div className="font-medium text-slate-900">{emp.employee_name}</div>
+                                        <div className="text-xs text-slate-500">{emp.employee_code}</div>
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">
+                                        {emp.department}
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center font-medium text-slate-900">
+                                        {emp.total_workdays}
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center text-slate-700">
+                                        {emp.total_absences}
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center text-slate-700">
+                                        {formatTime(emp.total_late_minutes)}
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center text-slate-700">
+                                        {formatTime(emp.total_undertime_minutes)}
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center text-slate-700">
+                                        {formatTime(emp.total_overtime_minutes)}
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center">
+                                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                            emp.total_missed_logs > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                        }`}>
+                                            {emp.total_missed_logs}
+                                        </span>
+                                    </td>
+                                    <td className="whitespace-nowrap px-4 py-3 text-center">
+                                        <div className="flex items-center justify-center gap-3">
+                                            <button
+                                                onClick={() => viewDetails(emp)}
+                                                className="text-[#1E3A8A] transition hover:text-[#1E3A8A]/80"
+                                                title="View Details"
+                                            >
+                                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                </svg>
+                                            </button>
+                                            <button
+                                                onClick={() => alert(`Generate letter for ${emp.employee_name}`)}
+                                                className="text-green-600 transition hover:text-green-700"
+                                                title="Generate Letter"
+                                            >
+                                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : (
+                <div className="rounded-lg border border-slate-200 bg-white p-12 text-center shadow-sm">
+                    <svg className="mx-auto h-12 w-12 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3 className="mt-2 text-sm font-medium text-slate-900">No attendance data</h3>
+                    <p className="mt-1 text-sm text-slate-500">Upload a CSV file to get started</p>
+                </div>
+            )}
 
-            {selectedEmployee && (
-                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="mb-4 flex items-start justify-between gap-3">
-                        <div>
-                            <div className="text-sm font-semibold text-slate-800">
-                                Detailed Attendance Breakdown
+            {/* Detail Modal */}
+            {showDetailModal && selectedEmployee && (
+                <>
+                    <div
+                        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm"
+                        onClick={closeModal}
+                    />
+                    <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-6xl -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white shadow-xl">
+                        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+                            <div>
+                                <h3 className="text-lg font-semibold text-slate-900">
+                                    {selectedEmployee.employee_name}
+                                </h3>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {selectedEmployee.employee_code} • {selectedEmployee.department}
+                                </p>
+                                {(filters.dateFrom || filters.dateTo) && (
+                                    <p className="mt-1 text-xs text-blue-600">
+                                        Filtered: {filters.dateFrom || 'Start'} to {filters.dateTo || 'End'}
+                                    </p>
+                                )}
                             </div>
-                            <div className="mt-0.5 text-xs text-slate-500">
-                                {selectedEmployee.employee} &middot; {selectedEmployee.department}
+                            <button
+                                type="button"
+                                onClick={closeModal}
+                                className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                            >
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="max-h-[70vh] overflow-y-auto p-6">
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full text-left text-sm">
+                                    <thead className="bg-[#1E3A8A] text-xs uppercase text-white">
+                                        <tr>
+                                            <th className="px-3 py-2 font-medium">Date</th>
+                                            <th className="px-3 py-2 font-medium">Time In AM</th>
+                                            <th className="px-3 py-2 font-medium">Time Out Lunch</th>
+                                            <th className="px-3 py-2 font-medium">Time In PM</th>
+                                            <th className="px-3 py-2 font-medium">Time Out PM</th>
+                                            <th className="px-3 py-2 font-medium text-center">Late AM</th>
+                                            <th className="px-3 py-2 font-medium text-center">Late PM</th>
+                                            <th className="px-3 py-2 font-medium text-center">Total Late</th>
+                                            <th className="px-3 py-2 font-medium text-center">Undertime</th>
+                                            <th className="px-3 py-2 font-medium text-center">Overtime</th>
+                                            <th className="px-3 py-2 font-medium text-center">Missed Logs</th>
+                                            <th className="px-3 py-2 font-medium">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {selectedEmployee.records && selectedEmployee.records.map((record) => (
+                                            <tr key={record.id} className={getDetailRowColorClass(record)}>
+                                                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">
+                                                    {new Date(record.attendance_date).toLocaleDateString()}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                                    {record.time_in_am || '-'}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                                    {record.time_out_lunch || '-'}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                                    {record.time_in_pm || '-'}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-slate-700">
+                                                    {record.time_out_pm || '-'}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-center text-slate-700">
+                                                    {formatTime(record.late_minutes_am)}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-center text-slate-700">
+                                                    {formatTime(record.late_minutes_pm)}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-center text-slate-700">
+                                                    {formatTime(record.total_late_minutes)}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-center text-slate-700">
+                                                    {formatTime(record.undertime_minutes)}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-center text-slate-700">
+                                                    {formatTime(record.overtime_minutes)}
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2 text-center">
+                                                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                                        record.missed_logs_count > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
+                                                    }`}>
+                                                        {record.missed_logs_count}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-3 py-2">
+                                                    {getStatusBadge(record.status)}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
-                        <button
-                            type="button"
-                            onClick={() => setSelectedEmployeeId(null)}
-                            className="rounded-md border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 transition hover:bg-slate-50"
-                        >
-                            Close
-                        </button>
-                    </div>
 
-                    <div className="overflow-x-auto rounded-lg border border-slate-200">
-                        <table className="min-w-full text-left text-sm">
-                            <thead className="bg-slate-50 text-xs uppercase text-slate-600">
-                                <tr>
-                                    <th className="px-4 py-3 font-medium">Date</th>
-                                    <th className="px-4 py-3 font-medium">Time In AM</th>
-                                    <th className="px-4 py-3 font-medium">Time Out Lunch</th>
-                                    <th className="px-4 py-3 font-medium">Time In PM</th>
-                                    <th className="px-4 py-3 font-medium">Time Out PM</th>
-                                    <th className="px-4 py-3 font-medium">Late AM</th>
-                                    <th className="px-4 py-3 font-medium">Late PM</th>
-                                    <th className="px-4 py-3 font-medium">Total Late (HH:MM)</th>
-                                    <th className="px-4 py-3 font-medium">Overtime</th>
-                                    <th className="px-4 py-3 font-medium">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {selectedDetails.map((row) => (
-                                    <tr
-                                        key={row.id}
-                                        className={`${getDetailRowClass(row)} transition hover:bg-slate-50`}
-                                    >
-                                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                            {row.date}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                            {row.timeInAm ? (
-                                                row.timeInAm
-                                            ) : (
-                                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                                                    Missing Log
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                            {row.timeOutLunch ? (
-                                                row.timeOutLunch
-                                            ) : (
-                                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                                                    Missing Log
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                            {row.timeInPm ? (
-                                                row.timeInPm
-                                            ) : (
-                                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                                                    Missing Log
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3 text-slate-700">
-                                            {row.timeOutPm ? (
-                                                row.timeOutPm
-                                            ) : (
-                                                <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
-                                                    Missing Log
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3">
-                                            {row.lateAmMinutes > 0 ? (
-                                                <span className="font-semibold text-[#F59E0B]">
-                                                    {row.lateAmMinutes} min
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400">0</span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3">
-                                            {row.latePmMinutes > 0 ? (
-                                                <span className="font-semibold text-[#F59E0B]">
-                                                    {row.latePmMinutes} min
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400">0</span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3">
-                                            {row.totalLateMinutes > 0 ? (
-                                                <span className="font-bold text-[#F59E0B]">
-                                                    {formatMinutesToTime(row.totalLateMinutes)}
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400">00:00</span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3">
-                                            {row.overtimeMinutes > 0 ? (
-                                                <span className="font-medium text-slate-700">
-                                                    {formatMinutesToTime(row.overtimeMinutes)}
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-400">00:00</span>
-                                            )}
-                                        </td>
-                                        <td className="whitespace-nowrap px-4 py-3 text-xs font-medium text-slate-700">
-                                            {row.status}
-                                        </td>
-                                    </tr>
-                                ))}
-                                {selectedDetails.length === 0 && (
-                                    <tr>
-                                        <td
-                                            colSpan={10}
-                                            className="px-4 py-6 text-center text-sm text-slate-500"
-                                        >
-                                            No detailed logs available for this employee and period.
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                        <div className="border-t border-slate-200 px-6 py-4">
+                            <button
+                                type="button"
+                                onClick={closeModal}
+                                className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                            >
+                                Close
+                            </button>
+                        </div>
                     </div>
-                </div>
+                </>
             )}
         </AdminLayout>
     );

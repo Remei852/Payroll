@@ -86,5 +86,12 @@ class EmployeeService
             return $employee->load('department', 'contributions');
         });
     }
+
+    public function delete(int $id): bool
+    {
+        $employee = $this->getById($id);
+
+        return $employee->delete();
+    }
 }
 

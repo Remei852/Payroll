@@ -18,7 +18,7 @@ class StoreDepartmentRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:255'],
-            'payroll_frequency' => ['required', 'string', 'in:WEEKLY,SEMI_MONTHLY,MONTHLY'],
+            'payroll_frequency' => ['nullable', 'string', 'in:WEEKLY,SEMI_MONTHLY,MONTHLY'],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }

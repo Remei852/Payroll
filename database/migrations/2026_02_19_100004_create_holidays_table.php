@@ -16,9 +16,11 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->date('holiday_date');
-            $table->string('type'); // Regular / Special
-            $table->decimal('rate_multiplier', 8, 4)->default(1.0000);
-            $table->boolean('is_paid')->default(true);
+            $table->enum('type', ['Regular', 'Special', 'Company'])->default('Regular');
+            $table->decimal('rate_multiplier', 4, 2)->default(1.00); // 1.00 = no multiplier, 2.00 = double pay, 1.30 = 130%
+            $table->boolean('is_paid')->default(false);
+            $table->boolean('is_recurring')->default(false);
+            $table->foreignId('department_id')->nullable()->constrained('departments')->onDelete('cascade');
             $table->timestamps();
         });
     }
@@ -28,4 +30,3 @@ return new class extends Migration
         Schema::dropIfExists('holidays');
     }
 };
-

@@ -17,7 +17,8 @@ class DatabaseSeeder extends Seeder
         $this->call([
             AdminUserSeeder::class,
             ContributionTypeSeeder::class,
-            EmployeeSeeder::class,
+            EmployeeSeeder::class, // This now creates departments with work schedules
+            PhilippineHolidaySeeder::class,
         ]);
     }
 }

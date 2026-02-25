@@ -22,6 +22,7 @@ return new class extends Migration
             $table->decimal('daily_rate', 12, 2)->default(0);
             $table->date('hire_date')->nullable();
             $table->string('employment_status')->default('ACTIVE'); // ACTIVE / INACTIVE
+            $table->softDeletes(); // Add soft deletes from the start
             $table->timestamps();
         });
     }

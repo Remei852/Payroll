@@ -355,9 +355,9 @@ export default function Index({
                 </div>
             </div>
 
-            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm" style={{ maxHeight: '500px', overflowY: 'auto' }}>
                 <table className="min-w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase text-slate-500">
+                    <thead className="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500 z-10">
                         <tr>
                             <th className="px-4 py-3 font-medium">Employee Code</th>
                             <th className="px-4 py-3 font-medium">Full Name</th>

@@ -19,6 +19,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function () {
     Route::get('contribution-types', [ContributionTypeController::class, 'index'])->name('api.contribution-types.index');
     Route::post('contribution-types', [ContributionTypeController::class, 'store'])->name('api.contribution-types.store');
 
+    Route::get('departments/stats', [DepartmentController::class, 'stats'])->name('api.departments.stats');
     Route::apiResource('departments', DepartmentController::class)->only([
         'index',
         'store',
@@ -32,6 +33,7 @@ Route::middleware(['web', 'auth', 'verified'])->group(function () {
         'store',
         'show',
         'update',
+        'destroy',
     ]);
 });
 

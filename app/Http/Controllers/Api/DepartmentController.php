@@ -52,5 +52,12 @@ class DepartmentController extends Controller
 
         return response()->json(null, 204);
     }
+
+    public function stats(): JsonResponse
+    {
+        $stats = $this->service->getStats();
+
+        return response()->json($stats);
+    }
 }
 

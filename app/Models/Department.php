@@ -19,5 +19,15 @@ class Department extends Model
         'payroll_frequency',
         'is_active',
     ];
+
+    public function employees()
+    {
+        return $this->hasMany(Employee::class);
+    }
+
+    public function workSchedule()
+    {
+        return $this->hasOne(WorkSchedule::class);
+    }
 }
 

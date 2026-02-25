@@ -26,7 +26,8 @@ return new class extends Migration
             $table->integer('total_late_minutes')->default(0);
             $table->integer('overtime_minutes')->default(0);
             $table->decimal('workday_rendered', 5, 2)->default(0);
-            $table->boolean('missing_logs')->default(false);
+            $table->integer('missed_logs_count')->default(0); // Count of missing time slots (0-4)
+            $table->string('status')->nullable();
             $table->string('remarks')->nullable();
             $table->timestamps();
         });

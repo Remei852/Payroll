@@ -1,7 +1,11 @@
 <?php
 
+use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ScheduleOverrideController;
+use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\WorkScheduleController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -15,17 +19,20 @@ Route::get('/dashboard', function () {
 })->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('/attendance', function () {
-        return Inertia::render('Attendance/Records');
-    })->name('admin.attendance.index');
-
+    // Main attendance page - shows records with upload functionality
+    Route::get('/attendance', [AttendanceController::class, 'records'])->name('admin.attendance.index');
+    
+    // Backward compatibility redirects
     Route::get('/attendance/upload-logs', function () {
-        return Inertia::render('Attendance/UploadLogs');
-    })->name('admin.attendance.upload-logs');
-
+        return redirect()->route('admin.attendance.index');
+    });
     Route::get('/attendance/records', function () {
-        return Inertia::render('Attendance/Records');
-    })->name('admin.attendance.records');
+        return redirect()->route('admin.attendance.index');
+    });
+    
+    // Upload and process endpoints
+    Route::post('/attendance/upload-logs', [AttendanceController::class, 'storeUpload'])->name('admin.attendance.store-upload');
+    Route::post('/attendance/process-logs', [AttendanceController::class, 'processLogs'])->name('admin.attendance.process-logs');
 
     Route::get('/attendance/summary', function () {
         return Inertia::render('Attendance/Summary');
@@ -85,17 +92,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::put('/employees/{id}', [\App\Http\Controllers\Api\EmployeeController::class, 'update'])->name('api.employees.update');
     });
 
-    Route::get('/settings/holidays', function () {
-        return Inertia::render('Settings/Holidays');
-    })->name('admin.settings.holidays');
+    // Settings - Unified page with tabs
+    Route::get('/settings', [SettingsController::class, 'index'])->name('admin.settings.index');
+    
+    // Work Schedules Management (only update - create/delete handled by departments)
+    Route::put('/settings/work-schedules/{workSchedule}', [WorkScheduleController::class, 'update'])->name('admin.settings.work-schedules.update');
 
-    Route::get('/settings/schedule-overrides', function () {
-        return Inertia::render('Settings/ScheduleOverrides');
-    })->name('admin.settings.schedule-overrides');
-
-    Route::get('/settings/color-palette', function () {
-        return Inertia::render('Settings/ColorPalette');
-    })->name('admin.settings.color-palette');
+    // Schedule Overrides Management
+    Route::get('/settings/schedule-overrides', [ScheduleOverrideController::class, 'index'])->name('admin.settings.schedule-overrides');
+    Route::post('/settings/schedule-overrides', [ScheduleOverrideController::class, 'store'])->name('admin.settings.schedule-overrides.store');
+    Route::put('/settings/schedule-overrides/{scheduleOverride}', [ScheduleOverrideController::class, 'update'])->name('admin.settings.schedule-overrides.update');
+    Route::delete('/settings/schedule-overrides/{scheduleOverride}', [ScheduleOverrideController::class, 'destroy'])->name('admin.settings.schedule-overrides.destroy');
 });
 
 Route::middleware('auth')->group(function () {

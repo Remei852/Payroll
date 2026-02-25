@@ -14,6 +14,7 @@ return new class extends Migration
 
         Schema::create('work_schedules', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('department_id')->constrained('departments')->onDelete('cascade');
             $table->string('name');
             $table->time('work_start_time');
             $table->time('work_end_time');
@@ -21,8 +22,15 @@ return new class extends Migration
             $table->time('break_end_time')->nullable();
             $table->integer('grace_period_minutes')->default(0);
             $table->boolean('is_working_day')->default(true);
+            $table->decimal('half_day_hours', 4, 2)->default(4.00);
             $table->timestamps();
         });
+        
+        // Fix PostgreSQL sequence if table has existing data
+        // This ensures auto-increment starts from the correct number
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement("SELECT setval('work_schedules_id_seq', (SELECT COALESCE(MAX(id), 1) FROM work_schedules))");
+        }
     }
 
     public function down(): void

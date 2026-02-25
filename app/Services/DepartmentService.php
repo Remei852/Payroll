@@ -49,5 +49,10 @@ class DepartmentService
 
         $this->repository->softDelete($department);
     }
+
+    public function getStats(): array
+    {
+        return $this->repository->getStats();
+    }
 }
 
