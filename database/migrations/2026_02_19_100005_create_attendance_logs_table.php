@@ -20,6 +20,10 @@ return new class extends Migration
             $table->string('location')->nullable();
             $table->string('source_file')->nullable();
             $table->timestamps();
+
+            // Performance indexes
+            $table->index(['log_datetime', 'employee_code']); // For date-based queries and grouping by employee
+            $table->index('source_file'); // For filtering by uploaded CSV file
         });
     }
 

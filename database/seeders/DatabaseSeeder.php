@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
             ContributionTypeSeeder::class,
             EmployeeSeeder::class, // This now creates departments with work schedules
             PhilippineHolidaySeeder::class,
+            CashAdvanceSeeder::class,
         ]);
     }
 }

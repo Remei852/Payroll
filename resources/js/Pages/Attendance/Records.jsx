@@ -1,13 +1,19 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head, router, usePage } from '@inertiajs/react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import ViolationLetterModal from '@/Components/ViolationLetterModal';
 
 export default function AttendanceRecords() {
-    const { flash, attendanceSummary, dateRange } = usePage().props;
+    const { flash, attendanceSummary, dateRange, gapInfo } = usePage().props;
     const fileInputRef = useRef(null);
     const [uploading, setUploading] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [showDetailModal, setShowDetailModal] = useState(false);
+    const [showGapWarningModal, setShowGapWarningModal] = useState(false);
+    const [gapWarningData, setGapWarningData] = useState(null);
+    const [dateRangeError, setDateRangeError] = useState(null);
+    const [showLetterModal, setShowLetterModal] = useState(false);
+    const [selectedEmployeeForLetter, setSelectedEmployeeForLetter] = useState(null);
     const [filters, setFilters] = useState({
         search: '',
         department: '',
@@ -15,6 +21,14 @@ export default function AttendanceRecords() {
         dateFrom: '',
         dateTo: '',
     });
+
+    // Show gap warning modal after CSV upload if gaps detected
+    useEffect(() => {
+        if (flash?.success && flash?.gapInfo && flash.gapInfo.has_gaps) {
+            setGapWarningData(flash.gapInfo);
+            setShowGapWarningModal(true);
+        }
+    }, [flash]);
 
     function handleUploadClick() {
         fileInputRef.current?.click();
@@ -104,7 +118,7 @@ export default function AttendanceRecords() {
             });
 
             // Recalculate totals based on filtered records
-            const totalWorkdays = filteredRecords.reduce((sum, r) => sum + (parseFloat(r.workday_rendered) || 0), 0);
+            const totalWorkdays = filteredRecords.reduce((sum, r) => sum + (parseFloat(r.rendered) || 0), 0);
             const totalAbsences = filteredRecords.filter(r => r.status === 'Absent').length;
             const halfDayCount = filteredRecords.filter(r => r.status.includes('Half Day')).length;
             const totalAbsenceDays = totalAbsences + (halfDayCount * 0.5);
@@ -136,6 +150,67 @@ export default function AttendanceRecords() {
             dateFrom: '',
             dateTo: '',
         });
+        setDateRangeError(null);
+    }
+
+    // Validate date range against gaps
+    function validateDateFilter(dateFrom, dateTo) {
+        if (!dateFrom || !dateTo) {
+            return true;
+        }
+
+        if (!gapInfo || !gapInfo.has_gaps) {
+            return true;
+        }
+
+        // Check if selected range spans across any gap
+        const selectedStart = new Date(dateFrom);
+        const selectedEnd = new Date(dateTo);
+
+        for (const gap of gapInfo.gaps) {
+            const gapStart = new Date(gap.start);
+            const gapEnd = new Date(gap.end);
+
+            // Check if the selected range overlaps with this gap
+            if (selectedStart <= gapEnd && selectedEnd >= gapStart) {
+                // Show popup error
+                alert(`❌ Cannot filter across date gap!\n\nMissing data: ${gap.start_formatted} - ${gap.end_formatted}\n\nPlease select a date range within one of these continuous periods:\n${gapInfo.continuous_ranges.map(r => `• ${r.start_formatted} - ${r.end_formatted}`).join('\n')}`);
+                
+                // Clear the invalid date filters
+                setFilters({
+                    ...filters,
+                    dateFrom: '',
+                    dateTo: ''
+                });
+                
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Handle date filter changes with validation
+    function handleDateFilterChange(field, value) {
+        const newFilters = { ...filters, [field]: value };
+        setFilters(newFilters);
+    }
+
+    // Validate when user finishes entering both dates (onBlur)
+    function handleDateBlur() {
+        // Removed - validation now happens on Apply Filter button click
+    }
+
+    // Apply filters with validation
+    function applyFilters() {
+        if (filters.dateFrom && filters.dateTo) {
+            const isValid = validateDateFilter(filters.dateFrom, filters.dateTo);
+            if (!isValid) {
+                return; // Don't apply if invalid
+            }
+        }
+        // Filters are already set in state, just trigger re-render
+        // The filteredEmployees will automatically update
     }
 
     function getRowColorClass(emp) {
@@ -315,8 +390,8 @@ export default function AttendanceRecords() {
                         Clear All
                     </button>
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    <div>
+                <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex-1 min-w-[200px]">
                         <label className="mb-1 block text-xs font-medium text-slate-600">
                             Search Employee
                         </label>
@@ -328,7 +403,7 @@ export default function AttendanceRecords() {
                             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
                         />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-[200px]">
                         <label className="mb-1 block text-xs font-medium text-slate-600">
                             Department
                         </label>
@@ -343,47 +418,42 @@ export default function AttendanceRecords() {
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label className="mb-1 block text-xs font-medium text-slate-600">
-                            Status
-                        </label>
-                        <select
-                            value={filters.status}
-                            onChange={(e) => setFilters({...filters, status: e.target.value})}
-                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
-                        >
-                            <option value="">All Status</option>
-                            <option value="Present">Present</option>
-                            <option value="Late">Late</option>
-                            <option value="Absent">Absent</option>
-                            <option value="Half Day">Half Day</option>
-                            <option value="Undertime">Undertime</option>
-                            <option value="Missed Log">Missed Log</option>
-                        </select>
-                    </div>
-                    <div>
+                    <div className="flex-1 min-w-[160px]">
                         <label className="mb-1 block text-xs font-medium text-slate-600">
                             Date From
                         </label>
                         <input
                             type="date"
                             value={filters.dateFrom}
-                            onChange={(e) => setFilters({...filters, dateFrom: e.target.value})}
+                            onChange={(e) => handleDateFilterChange('dateFrom', e.target.value)}
                             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
                         />
                     </div>
-                    <div>
+                    <div className="flex-1 min-w-[160px]">
                         <label className="mb-1 block text-xs font-medium text-slate-600">
                             Date To
                         </label>
                         <input
                             type="date"
                             value={filters.dateTo}
-                            onChange={(e) => setFilters({...filters, dateTo: e.target.value})}
+                            onChange={(e) => handleDateFilterChange('dateTo', e.target.value)}
                             className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]"
                         />
                     </div>
+                    <div>
+                        <button
+                            type="button"
+                            onClick={applyFilters}
+                            className="flex h-[38px] w-[38px] items-center justify-center rounded-md border border-slate-300 bg-white text-[#1E3A8A] shadow-sm transition hover:bg-slate-50"
+                            title="Apply Filters"
+                        >
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
+
                 <div className="mt-3 text-xs text-slate-500">
                     Showing {filteredEmployees.length} of {attendanceSummary?.length || 0} employees
                 </div>
@@ -451,7 +521,10 @@ export default function AttendanceRecords() {
                                                 </svg>
                                             </button>
                                             <button
-                                                onClick={() => alert(`Generate letter for ${emp.employee_name}`)}
+                                                onClick={() => {
+                                                    setSelectedEmployeeForLetter(emp.employee_id);
+                                                    setShowLetterModal(true);
+                                                }}
                                                 className="text-green-600 transition hover:text-green-700"
                                                 title="Generate Letter"
                                             >
@@ -590,6 +663,115 @@ export default function AttendanceRecords() {
                     </div>
                 </>
             )}
+
+            {/* Gap Warning Modal (shown after CSV upload) */}
+            {showGapWarningModal && gapWarningData && (
+                <>
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
+                        <div className="w-full max-w-2xl rounded-lg bg-white shadow-xl">
+                            {/* Modal Header */}
+                            <div className="border-b border-yellow-200 bg-yellow-50 px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                    <svg className="h-8 w-8 flex-shrink-0 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <div>
+                                        <h2 className="text-xl font-bold text-yellow-900">⚠️ Date Gaps Detected</h2>
+                                        <p className="text-sm text-yellow-700">CSV uploaded successfully, but gaps remain in attendance data</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="max-h-96 overflow-y-auto px-6 py-4">
+                                <div className="rounded-lg border-2 border-yellow-300 bg-yellow-50 p-4">
+                                    <p className="text-sm font-medium text-yellow-900">
+                                        Missing attendance data for the following date ranges:
+                                    </p>
+                                    <div className="mt-3 space-y-2">
+                                        {gapWarningData.gaps.map((gap, idx) => (
+                                            <div key={idx} className="flex items-center justify-between rounded-md bg-white p-3 shadow-sm">
+                                                <div className="flex items-center gap-3">
+                                                    <svg className="h-5 w-5 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                    <span className="font-semibold text-slate-900">
+                                                        {gap.start_formatted} - {gap.end_formatted}
+                                                    </span>
+                                                </div>
+                                                <span className="rounded-full bg-red-100 px-3 py-1 text-sm font-medium text-red-800">
+                                                    {gap.days} {gap.days === 1 ? 'day' : 'days'} missing
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 rounded-lg border-2 border-blue-300 bg-blue-50 p-4">
+                                    <p className="text-sm font-medium text-blue-900">
+                                        📌 Valid continuous date ranges (no gaps):
+                                    </p>
+                                    <div className="mt-3 space-y-2">
+                                        {gapWarningData.continuous_ranges.map((range, idx) => (
+                                            <div key={idx} className="flex items-center gap-3 rounded-md bg-white p-3 shadow-sm">
+                                                <svg className="h-5 w-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                </svg>
+                                                <span className="font-semibold text-slate-900">
+                                                    {range.start_formatted} - {range.end_formatted}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 rounded-lg border border-slate-300 bg-slate-50 p-4">
+                                    <h3 className="font-semibold text-slate-900">⚠️ Important:</h3>
+                                    <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-slate-400">•</span>
+                                            <span>Attendance totals may be inaccurate until all missing data is uploaded</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-slate-400">•</span>
+                                            <span>You cannot filter across date gaps - only within continuous ranges</span>
+                                        </li>
+                                        <li className="flex items-start gap-2">
+                                            <span className="text-slate-400">•</span>
+                                            <span>Upload the missing CSV files to fill the gaps</span>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="border-t border-slate-200 px-6 py-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGapWarningModal(false)}
+                                    className="w-full rounded-md bg-yellow-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-yellow-700"
+                                >
+                                    I Understand
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </>
+            )}
+
+            {/* Violation Letter Modal */}
+            <ViolationLetterModal
+                isOpen={showLetterModal}
+                onClose={() => {
+                    setShowLetterModal(false);
+                    setSelectedEmployeeForLetter(null);
+                }}
+                employeeId={selectedEmployeeForLetter}
+                dateFilters={{
+                    dateFrom: filters.dateFrom,
+                    dateTo: filters.dateTo
+                }}
+            />
         </AdminLayout>
     );
 }

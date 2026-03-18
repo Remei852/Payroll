@@ -30,7 +30,7 @@ return new class extends Migration
             $table->time('original_time_out_pm')->nullable();
             $table->string('original_status')->nullable();
             $table->integer('original_late_minutes')->default(0);
-            $table->decimal('original_workday_rendered', 4, 2)->default(0);
+            $table->decimal('original_rendered', 4, 2)->default(0);
             
             // Adjusted values (after adjustment)
             $table->time('adjusted_time_in_am')->nullable();
@@ -39,7 +39,7 @@ return new class extends Migration
             $table->time('adjusted_time_out_pm')->nullable();
             $table->string('adjusted_status')->nullable();
             $table->integer('adjusted_late_minutes')->default(0);
-            $table->decimal('adjusted_workday_rendered', 4, 2)->default(0);
+            $table->decimal('adjusted_rendered', 4, 2)->default(0);
             
             // Justification
             $table->text('reason');

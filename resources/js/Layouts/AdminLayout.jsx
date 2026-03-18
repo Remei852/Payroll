@@ -1,6 +1,7 @@
 import { Link, usePage } from '@inertiajs/react';
+import { useState } from 'react';
 
-function SidebarItem({ label, icon, href, active }) {
+function SidebarItem({ label, icon, href, active, collapsed }) {
     return (
         <Link
             href={href}
@@ -10,16 +11,32 @@ function SidebarItem({ label, icon, href, active }) {
                     ? 'bg-white/15 text-white'
                     : 'text-slate-200 hover:bg-white/10 hover:text-white')
             }
+            title={collapsed ? label : ''}
         >
-            <span className="text-base">{icon}</span>
-            {label}
+            <span className="shrink-0 text-base">{icon}</span>
+            {!collapsed && <span className="truncate">{label}</span>}
         </Link>
     );
 }
 
+// Initialize state from localStorage to avoid hydration mismatch
+const getInitialSidebarState = () => {
+    if (typeof window === 'undefined') return false;
+    const saved = localStorage.getItem('sidebarCollapsed');
+    return saved !== null ? JSON.parse(saved) : false;
+};
+
 export default function AdminLayout({ title, children }) {
     const { props } = usePage();
     const user = props.auth.user;
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(getInitialSidebarState);
+
+    // Save sidebar state to localStorage whenever it changes
+    const handleToggleSidebar = () => {
+        const newState = !sidebarCollapsed;
+        setSidebarCollapsed(newState);
+        localStorage.setItem('sidebarCollapsed', JSON.stringify(newState));
+    };
 
     const isCurrent = (name) => {
         try { return route().current(name); } catch { return false; }
@@ -28,16 +45,18 @@ export default function AdminLayout({ title, children }) {
     return (
         <div className="flex h-screen overflow-hidden bg-[#F1F5F9]">
             {/* Fixed Sidebar */}
-            <aside className="fixed left-0 top-0 flex h-screen w-64 flex-col bg-[#1E3A8A]">
+            <aside className={`fixed left-0 top-0 flex h-screen flex-col bg-[#1E3A8A] transition-all duration-300 ${sidebarCollapsed ? 'w-20' : 'w-64'}`}>
                 <div className="flex h-16 shrink-0 items-center border-b border-white/10 px-4">
-                    <div>
-                        <div className="text-base font-bold text-white">
-                            Attendance Checker
+                    {!sidebarCollapsed && (
+                        <div>
+                            <div className="text-base font-bold text-white">
+                                Attendance Checker
+                            </div>
+                            <div className="text-[11px] text-blue-200">
+                                Admin Panel
+                            </div>
                         </div>
-                        <div className="text-[11px] text-blue-200">
-                            Admin Panel
-                        </div>
-                    </div>
+                    )}
                 </div>
 
                 <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4">
@@ -50,28 +69,19 @@ export default function AdminLayout({ title, children }) {
                         }
                         href={route('dashboard')}
                         active={isCurrent('dashboard')}
+                        collapsed={sidebarCollapsed}
                     />
 
                     <SidebarItem
                         label="Attendance"
                         icon={
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0121 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
                             </svg>
                         }
                         href={route('admin.attendance.index')}
                         active={isCurrent('admin.attendance.index') || isCurrent('admin.attendance.records')}
-                    />
-
-                    <SidebarItem
-                        label="Letters"
-                        icon={
-                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-                            </svg>
-                        }
-                        href={route('admin.letters.index')}
-                        active={isCurrent('admin.letters.index')}
+                        collapsed={sidebarCollapsed}
                     />
 
                     <SidebarItem
@@ -83,6 +93,7 @@ export default function AdminLayout({ title, children }) {
                         }
                         href={route('admin.payroll.index')}
                         active={isCurrent('admin.payroll.index')}
+                        collapsed={sidebarCollapsed}
                     />
 
                     <SidebarItem
@@ -94,6 +105,7 @@ export default function AdminLayout({ title, children }) {
                         }
                         href={route('admin.departments.manage')}
                         active={isCurrent('admin.departments.manage')}
+                        collapsed={sidebarCollapsed}
                     />
 
                     <SidebarItem
@@ -105,6 +117,19 @@ export default function AdminLayout({ title, children }) {
                         }
                         href={route('admin.employees.index')}
                         active={isCurrent('admin.employees.index')}
+                        collapsed={sidebarCollapsed}
+                    />
+
+                    <SidebarItem
+                        label="Violations"
+                        icon={
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                            </svg>
+                        }
+                        href={route('admin.violations.index')}
+                        active={isCurrent('admin.violations.index')}
+                        collapsed={sidebarCollapsed}
                     />
 
                     <SidebarItem
@@ -117,13 +142,31 @@ export default function AdminLayout({ title, children }) {
                         }
                         href={route('admin.settings.index')}
                         active={isCurrent('admin.settings.index')}
+                        collapsed={sidebarCollapsed}
                     />
                 </nav>
+
+                {/* Collapse Button at Bottom */}
+                <div className="border-t border-white/10 px-2 py-4">
+                    <button
+                        onClick={handleToggleSidebar}
+                        className="flex w-full items-center justify-center rounded-md p-2.5 text-white transition hover:bg-white/10"
+                        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                    >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            {sidebarCollapsed ? (
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7m0 0l-7 7m7-7H6" />
+                            ) : (
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                            )}
+                        </svg>
+                    </button>
+                </div>
             </aside>
 
             {/* Main Content Area with Fixed Header */}
-            <div className="ml-64 flex min-w-0 flex-1 flex-col">
-                <header className="fixed left-64 right-0 top-0 z-10 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6">
+            <div className={`ml-64 flex min-w-0 flex-1 flex-col transition-all duration-300 ${sidebarCollapsed ? 'ml-20' : 'ml-64'}`}>
+                <header className={`fixed top-0 z-10 flex h-16 items-center justify-between border-b border-slate-200 bg-white px-6 transition-all duration-300 ${sidebarCollapsed ? 'left-20 right-0' : 'left-64 right-0'}`}>
                     <h1 className="text-lg font-semibold text-[#334155]">
                         {title}
                     </h1>

@@ -19,22 +19,27 @@ class EmployeeController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $perPage = $request->integer('per_page');
-        $departmentId = $request->get('department_id'); // Changed from integer() to get()
+        try {
+            $perPage = $request->integer('per_page');
+            $departmentId = $request->get('department_id');
 
-        if ($departmentId) {
-            $employees = Employee::where('department_id', $departmentId)
-                ->with('department')
-                ->orderBy('last_name')
-                ->orderBy('first_name')
-                ->get();
-            
-            return response()->json(['data' => $employees]);
+            if ($departmentId) {
+                $employees = Employee::where('department_id', $departmentId)
+                    ->with('department')
+                    ->orderBy('last_name')
+                    ->orderBy('first_name')
+                    ->get();
+                
+                return response()->json(['data' => $employees]);
+            }
+
+            $employees = $this->service->getAll($perPage ?: null);
+
+            return response()->json($employees);
+        } catch (\Exception $e) {
+            \Log::error('Employee API Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch employees'], 500);
         }
-
-        $employees = $this->service->getAll($perPage ?: null);
-
-        return response()->json($employees);
     }
 
     public function store(StoreEmployeeRequest $request): JsonResponse
@@ -44,23 +49,32 @@ class EmployeeController extends Controller
         return response()->json($employee, 201);
     }
 
-    public function show(int $id): JsonResponse
+    public function show(Employee $employee): JsonResponse
     {
-        $employee = $this->service->getById($id);
+        try {
+            $employee->load([
+                'department',
+                'contributions.contributionType',
+                'cashAdvances'
+            ]);
 
-        return response()->json($employee);
+            return response()->json($employee);
+        } catch (\Exception $e) {
+            \Log::error('Employee show error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to load employee details'], 500);
+        }
     }
 
-    public function update(UpdateEmployeeRequest $request, int $id): JsonResponse
+    public function update(UpdateEmployeeRequest $request, Employee $employee): JsonResponse
     {
-        $employee = $this->service->update($id, $request->validated());
+        $updated = $this->service->update($employee->id, $request->validated());
 
-        return response()->json($employee);
+        return response()->json($updated);
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(Employee $employee): JsonResponse
     {
-        $this->service->delete($id);
+        $this->service->delete($employee->id);
 
         return response()->json(['message' => 'Employee deleted successfully'], 200);
     }

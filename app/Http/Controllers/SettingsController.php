@@ -6,6 +6,7 @@ use App\Models\WorkSchedule;
 use App\Models\ScheduleOverride;
 use App\Models\Holiday;
 use App\Models\Department;
+use App\Models\DepartmentGracePeriodSettings;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -62,10 +63,16 @@ class SettingsController extends Controller
         // Get all departments
         $departments = Department::orderBy('name', 'asc')->get();
 
+        // Get grace period settings for all departments
+        $gracePeriodSettings = DepartmentGracePeriodSettings::with('department')
+            ->get()
+            ->keyBy('department_id');
+
         return Inertia::render('Settings/Index', [
             'workSchedules' => $workSchedules,
             'scheduleOverrides' => $allOverrides,
             'departments' => $departments,
+            'gracePeriodSettings' => $gracePeriodSettings,
             'currentYear' => $year,
         ]);
     }

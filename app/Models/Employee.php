@@ -25,7 +25,7 @@ class Employee extends Model
     ];
 
     protected $casts = [
-        'daily_rate' => 'decimal:2',
+        'daily_rate' => 'float',
         'hire_date' => 'date',
     ];
 
@@ -37,6 +37,11 @@ class Employee extends Model
     public function contributions()
     {
         return $this->hasMany(EmployeeContribution::class);
+    }
+
+    public function cashAdvances()
+    {
+        return $this->hasMany(CashAdvance::class);
     }
 }
 

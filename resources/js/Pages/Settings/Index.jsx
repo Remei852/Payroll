@@ -3,8 +3,9 @@ import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import WorkSchedulesTab from './Tabs/WorkSchedulesTab';
 import ScheduleOverridesTab from './Tabs/ScheduleOverridesTab';
+import GracePeriodSettingsTab from './Tabs/GracePeriodSettingsTab';
 
-export default function Settings({ workSchedules = [], scheduleOverrides = [], departments = [], flash }) {
+export default function Settings({ workSchedules = [], scheduleOverrides = [], departments = [], gracePeriodSettings = [], flash }) {
     const [activeTab, setActiveTab] = useState('work-schedules');
 
     const tabs = [
@@ -28,6 +29,16 @@ export default function Settings({ workSchedules = [], scheduleOverrides = [], d
             ),
             description: 'Manage holidays and special schedule changes',
         },
+        {
+            id: 'grace-period',
+            name: 'Grace Period',
+            icon: (
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            ),
+            description: 'Configure grace period policies per department',
+        },
     ];
 
     return (
@@ -50,7 +61,7 @@ export default function Settings({ workSchedules = [], scheduleOverrides = [], d
             <div className="mb-6">
                 <h1 className="text-page-title text-slate-800">Settings</h1>
                 <p className="mt-1 text-sm text-slate-600">
-                    Manage work schedules, holidays, and schedule overrides
+                    Manage work schedules, holidays, schedule overrides, and grace period policies
                 </p>
             </div>
 
@@ -90,6 +101,13 @@ export default function Settings({ workSchedules = [], scheduleOverrides = [], d
                         scheduleOverrides={scheduleOverrides}
                         departments={departments}
                         workSchedules={workSchedules}
+                        flash={flash}
+                    />
+                )}
+                {activeTab === 'grace-period' && (
+                    <GracePeriodSettingsTab 
+                        departments={departments}
+                        settings={gracePeriodSettings}
                         flash={flash}
                     />
                 )}

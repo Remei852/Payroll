@@ -19,18 +19,28 @@ class AttendanceRecord extends Model
         'time_out_pm',
         'late_minutes_am',
         'late_minutes_pm',
-        'total_late_minutes',
+        // total_late_minutes is a generated column (late_minutes_am + late_minutes_pm)
+        // It's automatically calculated by the database, so it's not fillable
         'overtime_minutes',
-        'workday_rendered',
+        'undertime_minutes',
+        'rendered',
         'missed_logs_count',
         'status',
         'remarks',
+        'notes',
+        'reviewed_by',
+        'reviewed_at',
     ];
 
     protected $casts = [
         'attendance_date' => 'date',
-        'workday_rendered' => 'decimal:2',
+        'rendered' => 'float',
         'missed_logs_count' => 'integer',
+        'late_minutes_am' => 'integer',
+        'late_minutes_pm' => 'integer',
+        'overtime_minutes' => 'integer',
+        'undertime_minutes' => 'integer',
+        'reviewed_at' => 'datetime',
     ];
 
     public function employee()
@@ -41,5 +51,15 @@ class AttendanceRecord extends Model
     public function schedule()
     {
         return $this->belongsTo(WorkSchedule::class, 'schedule_id');
+    }
+
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function changes()
+    {
+        return $this->hasMany(AttendanceRecordChange::class);
     }
 }

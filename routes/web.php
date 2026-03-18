@@ -5,6 +5,7 @@ use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ScheduleOverrideController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\ViolationsController;
 use App\Http\Controllers\WorkScheduleController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -42,37 +43,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         return Inertia::render('Attendance/MissingLogs');
     })->name('admin.attendance.missing-logs');
 
-    Route::get('/letters', function () {
-        return Inertia::render('Letters/Index');
-    })->name('admin.letters.index');
-
-    Route::get('/letters/generate-notice', function () {
-        return Inertia::render('Letters/GenerateNotice');
-    })->name('admin.letters.generate-notice');
-
-    Route::get('/letters/history', function () {
-        return Inertia::render('Letters/History');
-    })->name('admin.letters.history');
-
-    Route::get('/payroll', function () {
-        return Inertia::render('Payroll/Index');
-    })->name('admin.payroll.index');
-
-    Route::get('/payroll/periods', function () {
-        return Inertia::render('Payroll/Periods');
-    })->name('admin.payroll.periods');
-
-    Route::get('/payroll/generate', function () {
-        return Inertia::render('Payroll/Generate');
-    })->name('admin.payroll.generate');
-
-    Route::get('/payroll/summary', function () {
-        return Inertia::render('Payroll/Summary');
-    })->name('admin.payroll.summary');
-
-    Route::get('/payroll/payslips', function () {
-        return Inertia::render('Payroll/Payslips');
-    })->name('admin.payroll.payslips');
+    // Payroll Management
+    Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('admin.payroll.index');
+    Route::get('/payroll/generate', [\App\Http\Controllers\PayrollController::class, 'generate'])->name('admin.payroll.generate');
+    Route::post('/payroll/generate', [\App\Http\Controllers\PayrollController::class, 'processGeneration'])->name('admin.payroll.process-generation');
+    Route::get('/payroll/period/{id}', [\App\Http\Controllers\PayrollController::class, 'showPeriod'])->name('admin.payroll.period');
+    Route::post('/payroll/period/{id}/finalize', [\App\Http\Controllers\PayrollController::class, 'finalizePeriod'])->name('admin.payroll.finalize-period');
+    Route::get('/payroll/payslip/{id}', [\App\Http\Controllers\PayrollController::class, 'showPayslip'])->name('admin.payroll.payslip');
+    Route::post('/payroll/period/{periodId}/employee/{employeeId}/regenerate', [\App\Http\Controllers\PayrollController::class, 'regenerateEmployee'])->name('admin.payroll.regenerate-employee');
 
     Route::get('/departments', function () {
         return Inertia::render('Departments/Manage');
@@ -84,16 +62,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/employees', [EmployeeController::class, 'index'])->name('admin.employees.index');
 
-    // Employee API routes
-    Route::prefix('api')->group(function () {
-        Route::get('/employees', [\App\Http\Controllers\Api\EmployeeController::class, 'index'])->name('api.employees.index');
-        Route::post('/employees', [\App\Http\Controllers\Api\EmployeeController::class, 'store'])->name('api.employees.store');
-        Route::get('/employees/{id}', [\App\Http\Controllers\Api\EmployeeController::class, 'show'])->name('api.employees.show');
-        Route::put('/employees/{id}', [\App\Http\Controllers\Api\EmployeeController::class, 'update'])->name('api.employees.update');
-    });
-
     // Settings - Unified page with tabs
     Route::get('/settings', [SettingsController::class, 'index'])->name('admin.settings.index');
+    
+    // Violations Management
+    Route::get('/violations', [ViolationsController::class, 'index'])->name('admin.violations.index');
+    Route::get('/violations/export/csv', [ViolationsController::class, 'export'])->name('admin.violations.export');
+    Route::post('/violations/bulk-print', [ViolationsController::class, 'bulkPrint'])->name('admin.violations.bulk-print');
+    Route::get('/violations/{id}', [ViolationsController::class, 'show'])->name('admin.violations.show');
+    Route::get('/violations/{id}/print', [ViolationsController::class, 'print'])->name('admin.violations.print');
+    Route::patch('/violations/{id}/status', [ViolationsController::class, 'updateStatus'])->name('admin.violations.update-status');
+    Route::patch('/violations/{id}/notes', [ViolationsController::class, 'updateNotes'])->name('admin.violations.update-notes');
+    Route::post('/violations/{id}/dismiss', [ViolationsController::class, 'dismissViolation'])->name('admin.violations.dismiss');
+    
+    // Grace Period Settings
+    Route::get('/settings/grace-period/{departmentId}', [ViolationsController::class, 'getGracePeriodSettings'])->name('admin.settings.grace-period.show');
+    Route::put('/settings/grace-period/{departmentId}', [ViolationsController::class, 'updateGracePeriodSettings'])->name('admin.settings.grace-period.update');
     
     // Work Schedules Management (only update - create/delete handled by departments)
     Route::put('/settings/work-schedules/{workSchedule}', [WorkScheduleController::class, 'update'])->name('admin.settings.work-schedules.update');

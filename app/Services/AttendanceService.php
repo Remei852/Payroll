@@ -359,15 +359,32 @@ class AttendanceService
                 'time_out_pm' => $timeSlots['afternoon_out'],
                 'late_minutes_am' => $isWorkingDay ? $lateMinutesAM : 0,
                 'late_minutes_pm' => $isWorkingDay ? $lateMinutesPM : 0,
-                'total_late_minutes' => $isWorkingDay ? $totalLateMinutes : 0,
+                // total_late_minutes is auto-calculated by database (generated column)
                 'overtime_minutes' => $overtimeMinutes,
                 'undertime_minutes' => $isWorkingDay ? $undertimeMinutes : 0,
-                'workday_rendered' => $workdayRendered,
+                'rendered' => $workdayRendered,
                 'missed_logs_count' => $isWorkingDay ? $missedLogsCount : 0,
                 'status' => $status,
                 'remarks' => $remarks,
             ]
         );
+
+        // Detect and log violations (only for working days)
+        // TEMPORARILY DISABLED: AttendanceViolation model not yet ready
+        // if ($isWorkingDay) {
+        //     $this->detectViolations(
+        //         $employee,
+        //         $date,
+        //         $logs,
+        //         $uniqueLogs,
+        //         $timeSlots,
+        //         $schedule,
+        //         $lateMinutesAM,
+        //         $lateMinutesPM,
+        //         $undertimeMinutes,
+        //         $missedLogsCount
+        //     );
+        // }
     }
 
     /**
@@ -401,10 +418,10 @@ class AttendanceService
                 'time_out_pm' => null,
                 'late_minutes_am' => 0,
                 'late_minutes_pm' => 0,
-                'total_late_minutes' => 0,
+                // total_late_minutes is auto-calculated by database (generated column)
                 'overtime_minutes' => 0,
                 'undertime_minutes' => 0,
-                'workday_rendered' => 0,
+                'rendered' => 0,
                 'missed_logs_count' => 0,
                 'status' => $status,
                 'remarks' => $remarks,
@@ -608,7 +625,7 @@ class AttendanceService
     }
 
     /**
-     * STEP 3: Remove exact duplicates
+     * STEP 3: Remove exact duplicates (same timestamp/type(in/out))
      */
     private function removeExactDuplicates($logs): \Illuminate\Support\Collection
     {
@@ -1331,7 +1348,7 @@ class AttendanceService
                     'work_end_time' => '17:00:00',
                     'break_start_time' => '12:00:00',
                     'break_end_time' => '13:00:00',
-                    'grace_period_minutes' => 15,
+                    'grace_period_minutes' => 16,
                     'is_working_day' => true,
                     'half_day_hours' => 4,
                 ]);
@@ -1502,6 +1519,33 @@ class AttendanceService
     }
 
     /**
+     * Get date range from a specific uploaded CSV file
+     * This is more efficient than processing all logs
+     */
+    public function getNewlyUploadedLogsDateRange(string $sourceFile): array
+    {
+        // Get the date range from logs in this specific CSV file
+        $minDate = AttendanceLog::where('source_file', $sourceFile)
+            ->selectRaw('DATE(log_datetime) as date')
+            ->orderBy('log_datetime', 'asc')
+            ->first();
+        
+        $maxDate = AttendanceLog::where('source_file', $sourceFile)
+            ->selectRaw('DATE(log_datetime) as date')
+            ->orderBy('log_datetime', 'desc')
+            ->first();
+
+        if (!$minDate || !$maxDate) {
+            return ['start' => null, 'end' => null];
+        }
+
+        return [
+            'start' => $minDate->date,
+            'end' => $maxDate->date,
+        ];
+    }
+
+    /**
      * Get date range from attendance records
      */
     public function getAttendanceRecordsDateRange(): array
@@ -1531,6 +1575,165 @@ class AttendanceService
     }
 
     /**
+     * Detect date gaps in attendance records
+     * Returns array of gap information
+     */
+    public function detectDateGaps(): array
+    {
+        // Get all distinct dates from attendance_records, ordered
+        $dates = AttendanceRecord::selectRaw('DISTINCT attendance_date')
+            ->orderBy('attendance_date', 'asc')
+            ->pluck('attendance_date')
+            ->map(fn($date) => Carbon::parse($date));
+
+        if ($dates->count() < 2) {
+            return [
+                'has_gaps' => false,
+                'gaps' => [],
+                'continuous_ranges' => [],
+            ];
+        }
+
+        $gaps = [];
+        $continuousRanges = [];
+        $rangeStart = $dates->first();
+        $prevDate = $dates->first();
+
+        foreach ($dates->skip(1) as $currentDate) {
+            $daysDiff = $prevDate->diffInDays($currentDate);
+
+            // If gap detected (more than 1 day difference)
+            if ($daysDiff > 1) {
+                // Save the continuous range that just ended
+                $continuousRanges[] = [
+                    'start' => $rangeStart->format('Y-m-d'),
+                    'end' => $prevDate->format('Y-m-d'),
+                    'start_formatted' => $rangeStart->format('M d, Y'),
+                    'end_formatted' => $prevDate->format('M d, Y'),
+                ];
+
+                // Record the gap
+                $gapStart = $prevDate->copy()->addDay();
+                $gapEnd = $currentDate->copy()->subDay();
+                
+                $gaps[] = [
+                    'start' => $gapStart->format('Y-m-d'),
+                    'end' => $gapEnd->format('Y-m-d'),
+                    'start_formatted' => $gapStart->format('M d, Y'),
+                    'end_formatted' => $gapEnd->format('M d, Y'),
+                    'days' => $gapStart->diffInDays($gapEnd) + 1,
+                ];
+
+                // Start new continuous range
+                $rangeStart = $currentDate;
+            }
+
+            $prevDate = $currentDate;
+        }
+
+        // Add the last continuous range
+        $continuousRanges[] = [
+            'start' => $rangeStart->format('Y-m-d'),
+            'end' => $prevDate->format('Y-m-d'),
+            'start_formatted' => $rangeStart->format('M d, Y'),
+            'end_formatted' => $prevDate->format('M d, Y'),
+        ];
+
+        return [
+            'has_gaps' => count($gaps) > 0,
+            'gaps' => $gaps,
+            'continuous_ranges' => $continuousRanges,
+        ];
+    }
+
+    /**
+     * Validate if a date range contains gaps
+     * Returns validation result
+     */
+    public function validateDateRange(string $startDate, string $endDate): array
+    {
+        $start = Carbon::parse($startDate);
+        $end = Carbon::parse($endDate);
+
+        // Get all dates in the requested range
+        $requestedDates = [];
+        $current = $start->copy();
+        while ($current->lte($end)) {
+            $requestedDates[] = $current->format('Y-m-d');
+            $current->addDay();
+        }
+
+        // Get all dates that exist in attendance_records within this range
+        $existingDates = AttendanceRecord::whereBetween('attendance_date', [$startDate, $endDate])
+            ->selectRaw('DISTINCT attendance_date')
+            ->orderBy('attendance_date')
+            ->pluck('attendance_date')
+            ->map(fn($date) => Carbon::parse($date)->format('Y-m-d'))
+            ->toArray();
+
+        // Find missing dates (excluding weekends)
+        $missingDates = [];
+        foreach ($requestedDates as $date) {
+            $carbonDate = Carbon::parse($date);
+            
+            // Skip weekends (Saturday = 6, Sunday = 0)
+            if ($carbonDate->dayOfWeek === 0 || $carbonDate->dayOfWeek === 6) {
+                continue;
+            }
+
+            if (!in_array($date, $existingDates)) {
+                $missingDates[] = $date;
+            }
+        }
+
+        // Group consecutive missing dates into gap ranges
+        $gapRanges = [];
+        if (count($missingDates) > 0) {
+            $gapStart = $missingDates[0];
+            $gapEnd = $missingDates[0];
+
+            for ($i = 1; $i < count($missingDates); $i++) {
+                $prevDate = Carbon::parse($missingDates[$i - 1]);
+                $currentDate = Carbon::parse($missingDates[$i]);
+
+                // Check if consecutive (accounting for weekends)
+                $daysDiff = $prevDate->diffInDays($currentDate);
+                
+                if ($daysDiff <= 3) { // Allow up to 3 days (includes weekends)
+                    $gapEnd = $missingDates[$i];
+                } else {
+                    // Save current gap range
+                    $gapRanges[] = [
+                        'start' => $gapStart,
+                        'end' => $gapEnd,
+                        'start_formatted' => Carbon::parse($gapStart)->format('M d, Y'),
+                        'end_formatted' => Carbon::parse($gapEnd)->format('M d, Y'),
+                    ];
+                    
+                    // Start new gap range
+                    $gapStart = $missingDates[$i];
+                    $gapEnd = $missingDates[$i];
+                }
+            }
+
+            // Add the last gap range
+            $gapRanges[] = [
+                'start' => $gapStart,
+                'end' => $gapEnd,
+                'start_formatted' => Carbon::parse($gapStart)->format('M d, Y'),
+                'end_formatted' => Carbon::parse($gapEnd)->format('M d, Y'),
+            ];
+        }
+
+        return [
+            'valid' => count($missingDates) === 0,
+            'has_gaps' => count($missingDates) > 0,
+            'missing_dates' => $missingDates,
+            'gap_ranges' => $gapRanges,
+        ];
+    }
+
+    /**
      * Get attendance summary grouped by employee
      */
     public function getAttendanceSummary(): array
@@ -1548,7 +1751,7 @@ class AttendanceService
                 continue;
             }
 
-            $totalWorkdays = $employeeRecords->sum('workday_rendered');
+            $totalWorkdays = $employeeRecords->sum('rendered');
             
             // Count absences (whole day only)
             $totalAbsences = $employeeRecords->where('status', 'Absent')->count();
@@ -1599,7 +1802,7 @@ class AttendanceService
                         'total_late_minutes' => $record->total_late_minutes,
                         'undertime_minutes' => $record->undertime_minutes,
                         'overtime_minutes' => $record->overtime_minutes,
-                        'workday_rendered' => $record->workday_rendered,
+                        'rendered' => $record->rendered,
                         'status' => $record->status ?? 'Unknown',
                         'missed_logs_count' => $record->missed_logs_count,
                     ];
@@ -1614,4 +1817,136 @@ class AttendanceService
 
         return $summary;
     }
+
+    /**
+     * Detect and log violations for an employee on a specific date
+     * TEMPORARILY DISABLED: AttendanceViolation model not yet ready
+     */
+    /*
+    private function detectViolations(
+        Employee $employee,
+        Carbon $date,
+        $logs,
+        $uniqueLogs,
+        $timeSlots,
+        $schedule,
+        $lateMinutesAM,
+        $lateMinutesPM,
+        $undertimeMinutes,
+        $missedLogsCount
+    ): void {
+        $violations = [];
+
+        // 1. Multiple Logs Violation (more than 4 logs OR duplicates in same slot)
+        if (count($logs) > 4 || count($logs) !== count($uniqueLogs)) {
+            $violations[] = [
+                'violation_type' => 'Multiple Logs',
+                'details' => count($logs) . ' logs detected (expected: 4)',
+                'severity' => 'Low',
+                'metadata' => ['log_count' => count($logs), 'expected' => 4],
+            ];
+        }
+
+        // 2. Missing Log Violation
+        if ($missedLogsCount > 0) {
+            $missingSlots = [];
+            if (!$timeSlots['morning_in']) $missingSlots[] = 'Morning IN';
+            if (!$timeSlots['lunch_out']) $missingSlots[] = 'Lunch OUT';
+            if (!$timeSlots['lunch_in']) $missingSlots[] = 'Lunch IN';
+            if (!$timeSlots['afternoon_out']) $missingSlots[] = 'Afternoon OUT';
+            
+            $violations[] = [
+                'violation_type' => 'Missing Log',
+                'details' => 'Missing: ' . implode(', ', $missingSlots),
+                'severity' => 'High',
+                'metadata' => ['missing_slots' => $missingSlots],
+            ];
+        }
+
+        // 3. Early Lunch OUT Violation (before 11:55 AM)
+        if ($timeSlots['lunch_out']) {
+            $lunchOutTime = Carbon::parse($date->format('Y-m-d') . ' ' . $timeSlots['lunch_out']);
+            $earlyLimit = Carbon::parse($date->format('Y-m-d') . ' 11:55:00');
+            
+            if ($lunchOutTime->lt($earlyLimit)) {
+                $minutesEarly = $earlyLimit->diffInMinutes($lunchOutTime);
+                $violations[] = [
+                    'violation_type' => 'Early Lunch OUT',
+                    'details' => 'Clocked out at ' . $lunchOutTime->format('h:i A') . ' (limit: 11:55 AM)',
+                    'severity' => 'Medium',
+                    'metadata' => ['time' => $lunchOutTime->format('H:i:s'), 'minutes_early' => $minutesEarly],
+                ];
+            }
+        }
+
+        // 4. Late Lunch OUT Violation (after 12:15 PM)
+        if ($timeSlots['lunch_out']) {
+            $lunchOutTime = Carbon::parse($date->format('Y-m-d') . ' ' . $timeSlots['lunch_out']);
+            $lateLimit = Carbon::parse($date->format('Y-m-d') . ' 12:15:00');
+            
+            if ($lunchOutTime->gt($lateLimit)) {
+                $minutesLate = $lunchOutTime->diffInMinutes($lateLimit);
+                $violations[] = [
+                    'violation_type' => 'Late Lunch OUT',
+                    'details' => 'Clocked out at ' . $lunchOutTime->format('h:i A') . ' (limit: 12:15 PM)',
+                    'severity' => 'Medium',
+                    'metadata' => ['time' => $lunchOutTime->format('H:i:s'), 'minutes_late' => $minutesLate],
+                ];
+            }
+        }
+
+        // 5. Early Lunch IN Violation (before 12:55 PM)
+        if ($timeSlots['lunch_in']) {
+            $lunchInTime = Carbon::parse($date->format('Y-m-d') . ' ' . $timeSlots['lunch_in']);
+            $earlyLimit = Carbon::parse($date->format('Y-m-d') . ' 12:55:00');
+            
+            if ($lunchInTime->lt($earlyLimit)) {
+                $minutesEarly = $earlyLimit->diffInMinutes($lunchInTime);
+                $violations[] = [
+                    'violation_type' => 'Early Lunch IN',
+                    'details' => 'Clocked in at ' . $lunchInTime->format('h:i A') . ' (minimum: 12:55 PM)',
+                    'severity' => 'Low',
+                    'metadata' => ['time' => $lunchInTime->format('H:i:s'), 'minutes_early' => $minutesEarly],
+                ];
+            }
+        }
+
+        // 6. Excessive Late Violation (more than 15 minutes late)
+        if ($lateMinutesAM + $lateMinutesPM > 15) {
+            $violations[] = [
+                'violation_type' => 'Excessive Late',
+                'details' => 'Arrived ' . ($lateMinutesAM + $lateMinutesPM) . ' minutes late (grace: 15 min)',
+                'severity' => 'High',
+                'metadata' => ['late_minutes' => $lateMinutesAM + $lateMinutesPM, 'grace_period' => 15],
+            ];
+        }
+
+        // 7. Excessive Undertime Violation (more than 5 minutes undertime)
+        if ($undertimeMinutes > 5) {
+            $violations[] = [
+                'violation_type' => 'Excessive Undertime',
+                'details' => $undertimeMinutes . ' minutes undertime (allowance: 5 min)',
+                'severity' => 'Medium',
+                'metadata' => ['undertime_minutes' => $undertimeMinutes, 'allowance' => 5],
+            ];
+        }
+
+        // Save violations to database
+        foreach ($violations as $violation) {
+            \App\Models\AttendanceViolation::updateOrCreate(
+                [
+                    'employee_id' => $employee->id,
+                    'violation_date' => $date->format('Y-m-d'),
+                    'violation_type' => $violation['violation_type'],
+                ],
+                [
+                    'details' => $violation['details'],
+                    'severity' => $violation['severity'],
+                    'status' => 'Pending',
+                    'metadata' => $violation['metadata'],
+                ]
+            );
+        }
+    }
+    */
 }

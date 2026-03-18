@@ -1,6 +1,5 @@
 import AdminLayout from '@/Layouts/AdminLayout';
 import { Head } from '@inertiajs/react';
-import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
 
 function formatCurrency(value) {
@@ -77,7 +76,12 @@ export default function Index({
     async function fetchEmployeeDetails(id) {
         setLoadingEmployee(true);
         try {
-            const response = await axios.get(`/api/employees/${id}`);
+            const response = await window.axios.get(`/api/employees/${id}`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            });
             const emp = response.data;
             setSelectedEmployee({
                 id: emp.id,
@@ -102,6 +106,8 @@ export default function Index({
             );
         } catch (error) {
             console.error('Error fetching employee:', error);
+            console.error('Response status:', error.response?.status);
+            console.error('Response data:', error.response?.data);
             alert('Failed to load employee details');
         } finally {
             setLoadingEmployee(false);
@@ -110,7 +116,7 @@ export default function Index({
 
     async function fetchContributionTypes() {
         try {
-            const response = await axios.get('/api/contribution-types');
+            const response = await window.axios.get('/api/contribution-types');
             setContributionTypes(response.data || []);
         } catch (error) {
             console.error('Error fetching contribution types:', error);
@@ -151,7 +157,7 @@ export default function Index({
             hireDate: emp.hireDate ?? '',
         });
         // Fetch full employee details including contributions
-        const response = await axios.get(`/api/employees/${emp.id}`);
+        const response = await window.axios.get(`/api/employees/${emp.id}`);
         const empData = response.data;
         setSelectedEmployee({
             id: empData.id,
@@ -206,7 +212,7 @@ export default function Index({
                         return;
                     }
 
-                    const resp = await axios.post('/api/contribution-types', {
+                    const resp = await window.axios.post('/api/contribution-types', {
                         name: customName,
                         category: 'Other',
                         frequency: 'Monthly',
@@ -251,11 +257,11 @@ export default function Index({
             };
 
             if (drawerMode === 'create') {
-                await axios.post('/api/employees', payload);
+                await window.axios.post('/api/employees', payload);
                 alert('Employee created successfully');
                 window.location.reload(); // Refresh to get updated list
             } else {
-                await axios.put(`/api/employees/${selectedEmployeeId}`, payload);
+                await window.axios.put(`/api/employees/${selectedEmployeeId}`, payload);
                 alert('Employee updated successfully');
                 window.location.reload();
             }
