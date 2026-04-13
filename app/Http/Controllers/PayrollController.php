@@ -34,8 +34,10 @@ class PayrollController extends Controller
     public function index(): Response
     {
         $periods = PayrollPeriod::with('department')
+            ->withCount('payrolls')
+            ->withSum('payrolls', 'net_pay')
             ->orderBy('start_date', 'desc')
-            ->paginate(10);
+            ->paginate(15);
 
         return Inertia::render('Payroll/Index', [
             'periods' => $periods,
@@ -43,21 +45,9 @@ class PayrollController extends Controller
     }
 
     /**
-     * Show payroll generation page
-     */
-    public function generate(): Response
-    {
-        $departments = Department::orderBy('name')->get(['id', 'name']);
-
-        return Inertia::render('Payroll/Generate', [
-            'departments' => $departments,
-        ]);
-    }
-
-    /**
      * Process payroll generation
      */
-    public function processGeneration(Request $request): RedirectResponse
+    public function processGeneration(Request $request): RedirectResponse|JsonResponse
     {
         $request->validate([
             'department_id' => ['required', 'exists:departments,id'],
@@ -66,8 +56,26 @@ class PayrollController extends Controller
             'payroll_date' => ['required', 'date'],
         ]);
 
+        // Check for overlapping payroll period for the same department
+        $overlap = PayrollPeriod::where('department_id', $request->department_id)
+            ->where(function ($q) use ($request) {
+                $q->whereBetween('start_date', [$request->start_date, $request->end_date])
+                  ->orWhereBetween('end_date', [$request->start_date, $request->end_date])
+                  ->orWhere(function ($q2) use ($request) {
+                      $q2->where('start_date', '<=', $request->start_date)
+                         ->where('end_date', '>=', $request->end_date);
+                  });
+            })->first();
+
+        if ($overlap) {
+            $msg = "A payroll period already exists for this department covering {$overlap->start_date->format('M d')}–{$overlap->end_date->format('M d, Y')}.";
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json(['success' => false, 'message' => $msg], 422);
+            }
+            return redirect()->back()->withErrors(['overlap' => $msg]);
+        }
+
         try {
-            // Log the request
             \Log::info('Payroll Generation Started', [
                 'department_id' => $request->department_id,
                 'start_date' => $request->start_date,
@@ -75,7 +83,6 @@ class PayrollController extends Controller
                 'payroll_date' => $request->payroll_date,
             ]);
 
-            // Create payroll period
             $period = PayrollPeriod::create([
                 'department_id' => $request->department_id,
                 'start_date' => $request->start_date,
@@ -84,49 +91,85 @@ class PayrollController extends Controller
                 'status' => 'PROCESSING',
             ]);
 
-            // Generate payroll
             $results = $this->payrollService->generatePayroll($period);
-
-            // Update period status
             $period->update(['status' => 'OPEN']);
 
-            // Log results
             \Log::info('Payroll Generation Completed', [
                 'period_id' => $period->id,
                 'success' => $results['success'],
                 'failed' => $results['failed'],
-                'errors' => $results['errors'],
-                'warnings' => $results['warnings'] ?? [],
             ]);
 
-            // Build message
             $message = "Payroll generated successfully. {$results['success']} employees processed";
-            if ($results['failed'] > 0) {
-                $message .= ", {$results['failed']} failed.";
-            }
+            if ($results['failed'] > 0) $message .= ", {$results['failed']} failed.";
 
-            // Add warnings if any
-            if (!empty($results['warnings'])) {
-                foreach ($results['warnings'] as $warning) {
-                    if ($warning['type'] === 'ZERO_DAILY_RATE') {
-                        $message .= "\n⚠️ WARNING: {$warning['message']}. Please update their daily rates in the Employees section.";
-                    } elseif ($warning['type'] === 'NO_ATTENDANCE') {
-                        $message .= "\n⚠️ WARNING: {$warning['message']}. Make sure attendance logs have been processed.";
-                    }
-                }
+            // If request wants JSON (from the attendance wizard), return period ID
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json([
+                    'success' => true,
+                    'period_id' => $period->id,
+                    'message' => $message,
+                    'results' => $results,
+                ]);
             }
 
             return redirect()->route('admin.payroll.period', $period->id)
                 ->with('success', $message);
         } catch (\Exception $e) {
-            \Log::error('Payroll Generation Failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
+            \Log::error('Payroll Generation Failed', ['error' => $e->getMessage()]);
 
-            return redirect()->back()
-                ->with('error', 'Failed to generate payroll: ' . $e->getMessage());
+            if ($request->wantsJson() || $request->header('X-Inertia')) {
+                return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+            }
+
+            return redirect()->back()->with('error', 'Failed to generate payroll: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk print payslips for a period (all or selected employees)
+     */
+    public function printPeriod(Request $request, int $id): Response
+    {
+        $period = PayrollPeriod::with(['department'])->findOrFail($id);
+
+        // Optional: filter to specific payroll IDs
+        $payrollIds = $request->filled('ids')
+            ? explode(',', $request->get('ids'))
+            : null;
+
+        $query = Payroll::with(['employee.department', 'payrollPeriod', 'items'])
+            ->where('payroll_period_id', $id);
+
+        if ($payrollIds) {
+            $query->whereIn('id', $payrollIds);
+        }
+
+        $payrolls = $query->get();
+
+        // Attach attendance summary to each payroll
+        $payrolls->each(function ($payroll) use ($period) {
+            $records = AttendanceRecord::where('employee_id', $payroll->employee_id)
+                ->whereBetween('attendance_date', [$period->start_date, $period->end_date])
+                ->get();
+
+            $payroll->summary = [
+                'days_worked'       => round($records->sum('rendered'), 2),
+                'hours_worked'      => round($records->sum('rendered') * 8, 2),
+                'overtime_hours'    => round($records->sum('overtime_minutes') / 60, 2),
+                'late_minutes'      => $records->sum(fn($r) => $r->total_late_minutes ?? ($r->late_minutes_am + $r->late_minutes_pm)),
+                'late_hours'        => round($records->sum(fn($r) => $r->total_late_minutes ?? ($r->late_minutes_am + $r->late_minutes_pm)) / 60, 2),
+                'undertime_minutes' => $records->sum('undertime_minutes'),
+                'undertime_hours'   => round($records->sum('undertime_minutes') / 60, 2),
+                'daily_rate'        => $payroll->employee->daily_rate,
+                'hourly_rate'       => round($payroll->employee->daily_rate / 8, 2),
+            ];
+        });
+
+        return Inertia::render('Payroll/PrintPeriod', [
+            'period'   => $period,
+            'payrolls' => $payrolls,
+        ]);
     }
 
     /**
@@ -134,8 +177,28 @@ class PayrollController extends Controller
      */
     public function showPeriod(int $id): Response
     {
-        $period = PayrollPeriod::with(['department', 'payrolls.employee', 'payrolls.items'])
-            ->findOrFail($id);
+        $period = PayrollPeriod::with([
+            'department',
+            'payrolls.employee.contributions.contributionType',
+            'payrolls.employee.cashAdvances' => fn($q) => $q->where('status', 'Active')
+                ->whereNull('payroll_period_id')
+                ->orderBy('created_at'),
+            'payrolls.items',
+        ])->findOrFail($id);
+
+        // Attach attendance summary per employee
+        $period->payrolls->each(function ($payroll) use ($period) {
+            $records = \App\Models\AttendanceRecord::where('employee_id', $payroll->employee_id)
+                ->whereBetween('attendance_date', [$period->start_date, $period->end_date])
+                ->get();
+
+            $payroll->attendance_summary = [
+                'days_worked'        => round($records->sum('rendered'), 2),
+                'late_minutes'       => max(0, $records->sum(fn($r) => $r->total_late_minutes ?? ($r->late_minutes_am + $r->late_minutes_pm))),
+                'undertime_minutes'  => max(0, $records->sum('undertime_minutes')),
+                'overtime_minutes'   => max(0, $records->sum('overtime_minutes')),
+            ];
+        });
 
         return Inertia::render('Payroll/Period', [
             'period' => $period,
@@ -188,6 +251,37 @@ class PayrollController extends Controller
             'payroll' => $payroll,
             'summary' => $summary,
         ]);
+    }
+
+    /**
+     * Delete a payroll period (only OPEN periods can be deleted)
+     */
+    public function deletePeriod(int $id): RedirectResponse
+    {
+        $period = PayrollPeriod::findOrFail($id);
+
+        if ($period->status === 'CLOSED') {
+            return redirect()->back()->with('error', 'Finalized payroll periods cannot be deleted.');
+        }
+
+        // Manually delete children to avoid FK violations on PostgreSQL
+        $payrollIds = $period->payrolls()->pluck('id');
+        \App\Models\PayrollItem::whereIn('payroll_id', $payrollIds)->delete();
+        $period->payrolls()->delete();
+        // Detach cash advances from this period (don't delete them — they belong to the employee)
+        \App\Models\CashAdvance::where('payroll_period_id', $id)->update([
+            'payroll_period_id' => null,
+            'status' => 'Active',
+            'deducted_at' => null,
+        ]);
+        $period->delete();
+
+        if (request()->expectsJson()) {
+            return response()->json(['success' => true]);
+        }
+
+        return redirect()->route('admin.payroll.index')
+            ->with('success', 'Payroll period deleted.');
     }
 
     /**

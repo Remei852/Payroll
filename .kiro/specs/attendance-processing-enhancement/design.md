@@ -538,36 +538,36 @@ CREATE TABLE employees (
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     department_id BIGINT REFERENCES departments(id),
-    branch_id BIGINT REFERENCES branches(id),
     schedule_id BIGINT REFERENCES work_schedules(id),
     status VARCHAR(20) DEFAULT 'active',
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 );
 ```
-
+**departments**
+```sql
 **departments**
 ```sql
 CREATE TABLE departments (
     id BIGSERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
-    branch_id BIGINT REFERENCES branches(id),
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 );
 ```
 
-**branches**
+**work_schedules**
 ```sql
-CREATE TABLE branches (
+CREATE TABLE work_schedules (
     id BIGSERIAL PRIMARY KEY,
+    department_id BIGINT REFERENCES departments(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
-    location VARCHAR(255),
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-);
-```
-
+    work_start_time TIME NOT NULL,
+    work_end_time TIME NOT NULL,
+    break_start_time TIME,
+    break_end_time TIME,
+    grace_period_minutes INTEGER DEFAULT 0,
+    is_working_day BOOLEAN DEFAULT true,
 **work_schedules**
 ```sql
 CREATE TABLE work_schedules (
@@ -587,42 +587,30 @@ CREATE TABLE work_schedules (
 ```
 
 **holidays**
-```sql
-CREATE TABLE holidays (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    date DATE NOT NULL,
-    type VARCHAR(50), -- regular, special
-    is_recurring BOOLEAN DEFAULT false,
-    created_at TIMESTAMP,
-    updated_at TIMESTAMP
-);
-```
-
 **schedule_overrides**
 ```sql
 CREATE TABLE schedule_overrides (
     id BIGSERIAL PRIMARY KEY,
     date DATE NOT NULL,
-    branch_id BIGINT REFERENCES branches(id),
+   
     schedule_id BIGINT REFERENCES work_schedules(id),
     reason VARCHAR(255),
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 );
 ```
-
-#### Enhanced/New Tables
-
-**attendance_logs** (Enhanced - Raw Logs)
+**schedule_overrides**
 ```sql
-CREATE TABLE attendance_logs (
+CREATE TABLE schedule_overrides (
     id BIGSERIAL PRIMARY KEY,
-    employee_id BIGINT REFERENCES employees(id) ON DELETE CASCADE,
-    employee_code VARCHAR(50) NOT NULL,
-    log_datetime TIMESTAMP NOT NULL,
-    log_type VARCHAR(10) NOT NULL, -- 'IN' or 'OUT'
-    device_id VARCHAR(50),
+    date DATE NOT NULL,
+    department_id BIGINT REFERENCES departments(id),
+    schedule_id BIGINT REFERENCES work_schedules(id),
+    reason VARCHAR(255),
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+``` device_id VARCHAR(50),
     branch_id BIGINT REFERENCES branches(id),
     source_file VARCHAR(255), -- CSV filename for audit trail
     processed BOOLEAN DEFAULT false,
@@ -634,9 +622,9 @@ CREATE TABLE attendance_logs (
     INDEX idx_source_file (source_file),
     INDEX idx_processed (processed)
 );
-```
-
-**Key Design Decisions**:
+    device_id VARCHAR(50),
+    department_id BIGINT REFERENCES departments(id),
+    source_file VARCHAR(255), -- CSV filename for audit trail
 - `employee_id` added for foreign key relationship
 - `employee_code` retained for CSV import (before employee lookup)
 - `device_id` and `branch_id` added for multi-location support
@@ -648,12 +636,12 @@ CREATE TABLE attendance_logs (
 CREATE TABLE attendance_records (
     id BIGSERIAL PRIMARY KEY,
     employee_id BIGINT REFERENCES employees(id) ON DELETE CASCADE,
-    attendance_date DATE NOT NULL,
-    schedule_id BIGINT REFERENCES work_schedules(id),
-    
-    -- Time slots
-    time_in_am TIME,
-    time_out_lunch TIME,
+**Key Design Decisions**:
+- `employee_id` added for foreign key relationship
+- `employee_code` retained for CSV import (before employee lookup)
+- `device_id` and `department_id` added for multi-location support
+- `processed` flag tracks which logs have been processed
+- Never modified after creation (immutable audit trail)
     time_in_pm TIME,
     time_out_pm TIME,
     
@@ -809,12 +797,10 @@ erDiagram
     work_schedules ||--o{ attendance_records : uses
     
     attendance_records ||--o{ attendance_violations : has
-    attendance_records ||--|| attendance_reviews : may_have
+    employees ||--o{ attendance_reviews : has
     
-    users ||--o{ attendance_records : reviews
-    users ||--o{ attendance_reviews : processes
-    users ||--o{ attendance_violations : resolves
-```
+    departments ||--o{ employees : contains
+    departments ||--o{ attendance_logs : receives
 
 ### Model Relationships (Laravel)
 
@@ -836,25 +822,25 @@ class AttendanceLog extends Model
     {
         return $this->belongsTo(Employee::class);
     }
-    
-    public function branch()
-    {
-        return $this->belongsTo(Branch::class);
-    }
-}
-```
-
-**AttendanceRecord Model** (Enhanced)
-```php
-class AttendanceRecord extends Model
-{
     protected $fillable = [
-        'employee_id', 'attendance_date', 'schedule_id',
-        'time_in_am', 'time_out_lunch', 'time_in_pm', 'time_out_pm',
-        'late_minutes_am', 'late_minutes_pm', 'undertime_minutes',
-        'overtime_minutes', 'rendered', 'missed_logs_count',
-        'confidence_score', 'status', 'remarks',
-        'processed_at', 'reviewed_by', 'reviewed_at'
+        'employee_id', 'employee_code', 'log_datetime', 'log_type',
+        'device_id', 'department_id', 'source_file', 'processed'
+    ];
+    
+    protected $casts = [
+        'log_datetime' => 'datetime',
+        'processed' => 'boolean',
+    ];
+    
+    public function employee()
+    {
+        return $this->belongsTo(Employee::class);
+    }
+    
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
+    }   'processed_at', 'reviewed_by', 'reviewed_at'
     ];
     
     protected $casts = [
@@ -1165,7 +1151,7 @@ class ProcessingConfiguration extends Model
 
 *For any* column in the Raw Logs view, when sorted ascending or descending, the results should be ordered correctly by that column's values.
 
-**Validates: Requirements 4.4**
+*For any* raw log record, when displayed in the Raw Logs view, it should include employee, timestamp, device, department, log_type, and processing_status fields.
 
 ### Property 24: Raw Logs Count Accuracy
 

@@ -15,9 +15,8 @@ Route::get('/', function () {
     return redirect()->route('login');
 });
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', [\App\Http\Controllers\DashboardController::class, 'index'])
+    ->middleware(['auth', 'verified'])->name('dashboard');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     // Main attendance page - shows records with upload functionality
@@ -34,6 +33,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Upload and process endpoints
     Route::post('/attendance/upload-logs', [AttendanceController::class, 'storeUpload'])->name('admin.attendance.store-upload');
     Route::post('/attendance/process-logs', [AttendanceController::class, 'processLogs'])->name('admin.attendance.process-logs');
+    Route::post('/attendance/process-file', [AttendanceController::class, 'processFile'])->name('admin.attendance.process-file');
+    Route::delete('/attendance/uploads/{sourceFile}', [AttendanceController::class, 'deleteUpload'])->name('admin.attendance.uploads.destroy')->where('sourceFile', '.*');
+    Route::get('/attendance/uploads/{sourceFile}/impact', [AttendanceController::class, 'checkDeleteImpact'])->name('admin.attendance.uploads.impact')->where('sourceFile', '.*');
 
     Route::get('/attendance/summary', function () {
         return Inertia::render('Attendance/Summary');
@@ -45,10 +47,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Payroll Management
     Route::get('/payroll', [\App\Http\Controllers\PayrollController::class, 'index'])->name('admin.payroll.index');
-    Route::get('/payroll/generate', [\App\Http\Controllers\PayrollController::class, 'generate'])->name('admin.payroll.generate');
     Route::post('/payroll/generate', [\App\Http\Controllers\PayrollController::class, 'processGeneration'])->name('admin.payroll.process-generation');
     Route::get('/payroll/period/{id}', [\App\Http\Controllers\PayrollController::class, 'showPeriod'])->name('admin.payroll.period');
+    Route::get('/payroll/period/{id}/print', [\App\Http\Controllers\PayrollController::class, 'printPeriod'])->name('admin.payroll.period.print');
     Route::post('/payroll/period/{id}/finalize', [\App\Http\Controllers\PayrollController::class, 'finalizePeriod'])->name('admin.payroll.finalize-period');
+    Route::delete('/payroll/period/{id}', [\App\Http\Controllers\PayrollController::class, 'deletePeriod'])->name('admin.payroll.period.delete');
     Route::get('/payroll/payslip/{id}', [\App\Http\Controllers\PayrollController::class, 'showPayslip'])->name('admin.payroll.payslip');
     Route::post('/payroll/period/{periodId}/employee/{employeeId}/regenerate', [\App\Http\Controllers\PayrollController::class, 'regenerateEmployee'])->name('admin.payroll.regenerate-employee');
 

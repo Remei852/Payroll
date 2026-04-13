@@ -25,17 +25,22 @@ class SettingsController extends Controller
         $workSchedules = $departments->filter(function ($department) {
             return $department->workSchedule !== null;
         })->map(function ($department) {
+            $ws = $department->workSchedule;
             return [
-                'id' => $department->workSchedule->id,
-                'name' => $department->workSchedule->name,
-                'work_start_time' => $department->workSchedule->work_start_time,
-                'work_end_time' => $department->workSchedule->work_end_time,
-                'break_start_time' => $department->workSchedule->break_start_time,
-                'break_end_time' => $department->workSchedule->break_end_time,
-                'grace_period_minutes' => $department->workSchedule->grace_period_minutes,
-                'is_working_day' => $department->workSchedule->is_working_day,
-                'department_id' => $department->id,
-                'department_name' => $department->name,
+                'id'                          => $ws->id,
+                'name'                        => $ws->name,
+                'work_start_time'             => $ws->work_start_time,
+                'work_end_time'               => $ws->work_end_time,
+                'break_start_time'            => $ws->break_start_time,
+                'break_end_time'              => $ws->break_end_time,
+                'grace_period_enabled'        => $ws->grace_period_enabled ?? true,
+                'grace_period_minutes'        => $ws->grace_period_minutes,
+                'undertime_allowance_minutes' => $ws->undertime_allowance_minutes ?? 5,
+                'undertime_enabled'           => $ws->undertime_enabled ?? true,
+                'monthly_late_allowance_minutes' => $ws->monthly_late_allowance_minutes ?? 0,
+                'is_working_day'              => $ws->is_working_day,
+                'department_id'               => $department->id,
+                'department_name'             => $department->name,
             ];
         })->values();
         
@@ -69,11 +74,10 @@ class SettingsController extends Controller
             ->keyBy('department_id');
 
         return Inertia::render('Settings/Index', [
-            'workSchedules' => $workSchedules,
+            'workSchedules'   => $workSchedules,
             'scheduleOverrides' => $allOverrides,
-            'departments' => $departments,
-            'gracePeriodSettings' => $gracePeriodSettings,
-            'currentYear' => $year,
+            'departments'     => $departments,
+            'currentYear'     => $year,
         ]);
     }
 

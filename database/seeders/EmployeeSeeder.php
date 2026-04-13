@@ -100,7 +100,7 @@ class EmployeeSeeder extends Seeder
                     'last_name' => $nameParts['last_name'],
                     'department_id' => $departments[$empData['department']],
                     'position' => null, // Can be updated later
-                    'daily_rate' => 0, // Default, can be updated later
+                    'daily_rate' => 350.00,
                     'hire_date' => null, // Can be updated later
                     'employment_status' => 'ACTIVE',
                 ]

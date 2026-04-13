@@ -18,11 +18,10 @@ export default function Payslip({ payroll, summary }) {
     const deductions = payroll.items.filter(item => item.type === 'DEDUCTION');
     
     // Separate deductions into categories
-    const penalties = deductions.filter(item => item.category.includes('Penalty'));
-    const contributions = deductions.filter(item => !item.category.includes('Penalty') && !item.category.includes('Cash Advance'));
-    const cashAdvanceDeductions = deductions.filter(item => item.category.includes('Cash Advance'));
-    
-    // Calculate total cash advance deductions
+    const penalties      = deductions.filter(item => item.category.includes('Penalty'));
+    const cashAdvanceDeductions = deductions.filter(item => item.category === 'Cash Advance');
+    const contributions  = deductions.filter(item => !item.category.includes('Penalty') && item.category !== 'Cash Advance');
+
     const totalCashAdvanceDeductions = cashAdvanceDeductions.reduce((sum, item) => sum + parseFloat(item.amount), 0);
 
     const handlePrint = () => {
@@ -68,9 +67,8 @@ export default function Payslip({ payroll, summary }) {
 
             {/* Payslip Content - Professional Format */}
             <div className="mx-auto max-w-4xl bg-white p-8 shadow-sm print:shadow-none print:p-0">
-                {/* Header with Logo Area */}
+                {/* Header */}
                 <div className="mb-6 border-b-2 border-slate-300 pb-4">
-                    <div className="mb-4 text-sm font-semibold text-slate-600">🏢 Your Company Logo</div>
                     <h1 className="text-2xl font-bold text-slate-900">PAYSLIP</h1>
                     <p className="mt-1 text-sm text-slate-600">
                         Salary Slip of {payroll.employee.first_name} {payroll.employee.last_name} for {new Date(payroll.payroll_period.start_date).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
@@ -171,13 +169,19 @@ export default function Payslip({ payroll, summary }) {
                             ))}
 
                             {/* Cash Advance Deductions */}
-                            {cashAdvanceDeductions.length > 0 && cashAdvanceDeductions.map((item) => (
+                            {cashAdvanceDeductions.length > 0 ? cashAdvanceDeductions.map((item) => (
                                 <tr key={item.id} className="border-b border-slate-200">
-                                    <td className="py-2 text-slate-700">{item.category}</td>
-                                    <td className="py-2 text-right text-slate-900">-{formatCurrency(item.amount)}</td>
-                                    <td className="py-2 text-right text-slate-900">-{formatCurrency(item.amount)}</td>
+                                    <td className="py-2 text-slate-700">Cash Advance</td>
+                                    <td className="py-2 text-right text-red-600">-{formatCurrency(item.amount)}</td>
+                                    <td className="py-2 text-right text-red-600">-{formatCurrency(item.amount)}</td>
                                 </tr>
-                            ))}
+                            )) : (
+                                <tr className="border-b border-slate-200">
+                                    <td className="py-2 text-slate-400 italic">Cash Advance</td>
+                                    <td className="py-2 text-right text-slate-400">—</td>
+                                    <td className="py-2 text-right text-slate-400">—</td>
+                                </tr>
+                            )}
 
                             {/* Net Salary */}
                             <tr className="border-t-2 border-slate-300 bg-slate-50">
@@ -291,7 +295,6 @@ export default function Payslip({ payroll, summary }) {
                 <div className="border-t border-slate-200 pt-4 text-center text-xs text-slate-500">
                     <p>This is a computer-generated payslip. No signature is required.</p>
                     <p className="mt-1">Generated on {new Date(payroll.generated_at).toLocaleString('en-US')}</p>
-                    <p className="mt-2">2025@projectslti@gmail.com</p>
                     <p className="mt-2 text-slate-400">Page 1 / 1</p>
                 </div>
             </div>

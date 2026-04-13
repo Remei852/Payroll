@@ -1043,40 +1043,42 @@ class AttendanceService
     }
 
     /**
-     * Check if employee is late
+     * Check if employee is late.
+     * Uses schedule's grace_period_enabled and grace_period_minutes.
      */
     private function isLate(?string $firstIn, WorkSchedule $schedule): bool
     {
         if (!$firstIn) return false;
 
-        // Parse times with today's date for proper comparison
         $today = Carbon::today();
         $startTime = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_start_time);
-        $graceTime = $startTime->copy()->addMinutes(self::GRACE_PERIOD_MINUTES);
-        $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $firstIn);
+        $actualIn  = Carbon::parse($today->format('Y-m-d') . ' ' . $firstIn);
 
-        return $actualIn->gt($graceTime);
+        // If grace period is disabled, any arrival after start time is late
+        $graceMins = ($schedule->grace_period_enabled ?? true)
+            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
+            : 0;
+
+        return $actualIn->gt($startTime->copy()->addMinutes($graceMins));
     }
 
     /**
-     * Calculate late minutes
-     */
-    /**
-     * Calculate late minutes (from scheduled time, no grace period for payroll)
+     * Calculate late minutes from scheduled start time.
+     * Late minutes are counted from start time (not from end of grace period).
      */
     private function calculateLateMinutes(?string $firstIn, WorkSchedule $schedule): int
     {
         if (!$firstIn) return 0;
 
-        // Parse times with today's date for proper comparison
         $today = Carbon::today();
         $startTime = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_start_time);
-        $graceTime = $startTime->copy()->addMinutes(self::GRACE_PERIOD_MINUTES);
-        $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $firstIn);
+        $actualIn  = Carbon::parse($today->format('Y-m-d') . ' ' . $firstIn);
 
-        // Employee is late if arrival is after grace time
-        // Late minutes are calculated from scheduled start time (not grace time)
-        if ($actualIn->gt($graceTime)) {
+        $graceMins = ($schedule->grace_period_enabled ?? true)
+            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
+            : 0;
+
+        if ($actualIn->gt($startTime->copy()->addMinutes($graceMins))) {
             return $startTime->diffInMinutes($actualIn);
         }
 
@@ -1084,36 +1086,32 @@ class AttendanceService
     }
 
     /**
-     * Check if employee is late in the afternoon (PM)
+     * Check if employee is late returning from lunch (PM).
+     * Uses a 1-minute threshold after break_end_time.
      */
     private function isLatePM(?string $pmIn, WorkSchedule $schedule): bool
     {
         if (!$pmIn) return false;
 
-        // Parse times with today's date for proper comparison
-        $today = Carbon::today();
+        $today    = Carbon::today();
         $breakEnd = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_end_time);
-        $lateThreshold = $breakEnd->copy()->addMinute(); // Late if more than 1 minute after break_end_time
         $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $pmIn);
 
-        return $actualIn->gt($lateThreshold);
+        return $actualIn->gt($breakEnd->copy()->addMinute());
     }
 
     /**
-     * Calculate afternoon late minutes
+     * Calculate afternoon late minutes.
      */
     private function calculateLatePM(?string $pmIn, WorkSchedule $schedule): int
     {
         if (!$pmIn) return 0;
 
-        // Parse times with today's date for proper comparison
-        $today = Carbon::today();
+        $today    = Carbon::today();
         $breakEnd = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_end_time);
         $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $pmIn);
 
-        // Employee is late in PM if arrival is more than 1 minute after break_end_time
-        $lateThreshold = $breakEnd->copy()->addMinute();
-        if ($actualIn->gt($lateThreshold)) {
+        if ($actualIn->gt($breakEnd->copy()->addMinute())) {
             return $breakEnd->diffInMinutes($actualIn);
         }
 
@@ -1121,37 +1119,36 @@ class AttendanceService
     }
 
     /**
-     * Check if employee has undertime
+     * Check if employee has undertime.
+     * Uses schedule's undertime_enabled and undertime_allowance_minutes.
      */
     private function isUndertime(?string $lastOut, WorkSchedule $schedule): bool
     {
         if (!$lastOut) return false;
+        if (!($schedule->undertime_enabled ?? true)) return false;
 
-        // Parse times with today's date for proper comparison
-        $today = Carbon::today();
-        $endTime = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
-        $allowedEarlyOut = $endTime->copy()->subMinutes(self::EARLY_OUT_ALLOWANCE_MINUTES);
+        $today     = Carbon::today();
+        $endTime   = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
+        $allowance = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
         $actualOut = Carbon::parse($today->format('Y-m-d') . ' ' . $lastOut);
 
-        return $actualOut->lt($allowedEarlyOut);
+        return $actualOut->lt($endTime->copy()->subMinutes($allowance));
     }
 
     /**
-     * Calculate undertime minutes
+     * Calculate undertime minutes from scheduled end time.
      */
     private function calculateUndertimeMinutes(?string $lastOut, WorkSchedule $schedule): int
     {
         if (!$lastOut) return 0;
+        if (!($schedule->undertime_enabled ?? true)) return 0;
 
-        // Parse times with today's date for proper comparison
-        $today = Carbon::today();
-        $endTime = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
-        $allowedEarlyOut = $endTime->copy()->subMinutes(self::EARLY_OUT_ALLOWANCE_MINUTES);
+        $today     = Carbon::today();
+        $endTime   = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
+        $allowance = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
         $actualOut = Carbon::parse($today->format('Y-m-d') . ' ' . $lastOut);
 
-        // Employee has undertime if they left before allowed early out time
-        if ($actualOut->lt($allowedEarlyOut)) {
-            // Calculate undertime from scheduled end time (not from allowed early out)
+        if ($actualOut->lt($endTime->copy()->subMinutes($allowance))) {
             return $endTime->diffInMinutes($actualOut);
         }
 

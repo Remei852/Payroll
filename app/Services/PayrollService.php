@@ -136,6 +136,38 @@ class PayrollService
             ]);
         }
 
+        // Auto-include active cash advances as deductions
+        // Only include advances that are truly Active (not deducted in any other period)
+        $activeAdvances = $employee->cashAdvances()
+            ->where('status', 'Active')
+            ->whereNull('payroll_period_id')
+            ->orderBy('created_at')
+            ->get();
+        foreach ($activeAdvances as $advance) {
+            PayrollItem::create([
+                'payroll_id'   => $payroll->id,
+                'type'         => 'DEDUCTION',
+                'category'     => 'Cash Advance',
+                'amount'       => $advance->amount,
+                'reference_id' => $advance->id,
+            ]);
+            $advance->update([
+                'status'            => 'Deducted',
+                'deducted_at'       => now(),
+                'payroll_period_id' => $period->id,
+            ]);
+        }
+
+        // Recalculate totals if cash advances were added
+        if ($activeAdvances->isNotEmpty()) {
+            $totalEarnings   = $payroll->earnings()->sum('amount');
+            $totalDeductions = $payroll->deductions()->sum('amount');
+            $payroll->update([
+                'total_deductions' => $totalDeductions,
+                'net_pay'          => $totalEarnings - $totalDeductions,
+            ]);
+        }
+
         return $payroll->fresh(['items']);
     }
 
@@ -196,14 +228,22 @@ class PayrollService
         }
 
         // Calculate deductions
-        $latePenalty = round(($totalLateMinutes / 60) * $hourlyRate, 2);
+        // Apply monthly late allowance: subtract the allowed minutes before computing penalty
+        $schedule = $employee->department?->workSchedule;
+        $monthlyAllowance = $schedule ? ($schedule->monthly_late_allowance_minutes ?? 0) : 0;
+        $billableLateMinutes = max(0, $totalLateMinutes - $monthlyAllowance);
+
+        $latePenalty = round(($billableLateMinutes / 60) * $hourlyRate, 2);
         $undertimePenalty = round(($totalUndertimeMinutes / 60) * $hourlyRate, 2);
 
         $deductions = [];
 
         if ($latePenalty > 0) {
+            $category = $monthlyAllowance > 0
+                ? "Late Penalty (after {$monthlyAllowance}min allowance)"
+                : 'Late Penalty';
             $deductions[] = [
-                'category' => 'Late Penalty',
+                'category' => $category,
                 'amount' => $latePenalty,
                 'reference_id' => null,
             ];

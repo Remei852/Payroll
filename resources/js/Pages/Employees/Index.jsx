@@ -10,6 +10,177 @@ function formatCurrency(value) {
     }).format(value);
 }
 
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+// ─── Cash Advances Tab ────────────────────────────────────────────────────────
+function CashAdvancesTab({ employeeId }) {
+    const [advances, setAdvances] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [form, setForm] = useState({ amount: '', reason: '' });
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const res = await fetch(`/api/employees/${employeeId}/cash-advances`);
+            const data = await res.json();
+            // Show all advances (deductible + remaining)
+            const all = [...(data.deductible ?? []), ...(data.remaining ?? [])];
+            // Deduplicate by id
+            const seen = new Set();
+            setAdvances(all.filter(a => { if (seen.has(a.id)) return false; seen.add(a.id); return true; })
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => { load(); }, [employeeId]);
+
+    async function handleAdd(e) {
+        e.preventDefault();
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch(`/api/employees/${employeeId}/cash-advances`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
+                body: JSON.stringify({ amount: parseFloat(form.amount), reason: form.reason || null }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || 'Failed');
+            setForm({ amount: '', reason: '' });
+            setShowForm(false);
+            load();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    async function handleRemove(id) {
+        if (!confirm('Remove this cash advance?')) return;
+        await fetch(`/api/cash-advances/${id}`, {
+            method: 'DELETE',
+            headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
+        });
+        load();
+    }
+
+    const pending  = advances.filter(a => a.status === 'Active');
+    const deducted = advances.filter(a => a.status === 'Deducted');
+    const totalPending = pending.reduce((s, a) => s + parseFloat(a.amount), 0);
+
+    return (
+        <div className="space-y-4">
+            {/* Summary + Add button */}
+            <div className="flex items-center justify-between">
+                <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Cash Advances</p>
+                    {totalPending > 0 && (
+                        <p className="mt-0.5 text-xs text-amber-600 font-medium">
+                            {formatCurrency(totalPending)} pending deduction
+                        </p>
+                    )}
+                </div>
+                <button onClick={() => setShowForm(s => !s)}
+                    className="inline-flex items-center gap-1 rounded-md bg-[#1E3A8A]/10 px-2.5 py-1.5 text-xs font-medium text-[#1E3A8A] hover:bg-[#1E3A8A]/20 transition">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+                    Add
+                </button>
+            </div>
+
+            {/* Add form */}
+            {showForm && (
+                <form onSubmit={handleAdd} className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div>
+                            <label className="mb-1 block text-[11px] font-medium text-slate-500">Amount</label>
+                            <input required type="number" min="0.01" step="0.01" placeholder="0.00"
+                                value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none" />
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-[11px] font-medium text-slate-500">Reason</label>
+                            <input type="text" placeholder="Optional"
+                                value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none" />
+                        </div>
+                    </div>
+                    {error && <p className="text-xs text-red-600">{error}</p>}
+                    <div className="flex justify-end gap-2">
+                        <button type="button" onClick={() => setShowForm(false)}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100">Cancel</button>
+                        <button type="submit" disabled={saving}
+                            className="rounded-lg bg-[#1E3A8A] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1E3A8A]/90 disabled:opacity-50">
+                            {saving ? 'Saving…' : 'Save'}
+                        </button>
+                    </div>
+                </form>
+            )}
+
+            {loading ? (
+                <p className="text-xs text-slate-400">Loading…</p>
+            ) : advances.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-xs text-slate-500">
+                    No cash advances recorded.
+                </div>
+            ) : (
+                <div className="space-y-4">
+                    {/* Pending */}
+                    {pending.length > 0 && (
+                        <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-amber-600">Pending ({pending.length})</p>
+                            <div className="space-y-2">
+                                {pending.map(a => (
+                                    <div key={a.id} className="flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                                        <div>
+                                            <p className="text-sm font-semibold text-amber-800">{formatCurrency(a.amount)}</p>
+                                            <p className="text-xs text-amber-600">{a.reason || 'No reason'} · {fmtDate(a.created_at)}</p>
+                                        </div>
+                                        <button onClick={() => handleRemove(a.id)}
+                                            className="rounded p-1 text-amber-400 hover:bg-amber-100 hover:text-red-500 transition" title="Remove">
+                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Deducted history */}
+                    {deducted.length > 0 && (
+                        <div>
+                            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Deducted History</p>
+                            <div className="space-y-2">
+                                {deducted.map(a => (
+                                    <div key={a.id} className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
+                                        <div>
+                                            <p className="text-sm font-medium text-slate-700 line-through">{formatCurrency(a.amount)}</p>
+                                            <p className="text-xs text-slate-400">
+                                                {a.reason || 'No reason'} · Deducted {fmtDate(a.deducted_at)}
+                                                {a.payroll_period && (
+                                                    <span className="ml-1 text-slate-400">
+                                                        ({new Date(a.payroll_period.start_date).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })})
+                                                    </span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">Deducted</span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function Index({
     employees: initialEmployees = [],
     departments: initialDepartments = [],
@@ -38,6 +209,7 @@ export default function Index({
     });
     const [formContributions, setFormContributions] = useState([]);
     const [submitting, setSubmitting] = useState(false);
+    const [deletingId, setDeletingId] = useState(null);
 
     const OTHER_TYPE_VALUE = '__other__';
 
@@ -142,6 +314,23 @@ export default function Index({
         setFormContributions([]);
     }
 
+    async function deleteEmployee(emp) {
+        if (!confirm(`Delete ${emp.firstName} ${emp.lastName}? This cannot be undone.`)) return;
+        setDeletingId(emp.id);
+        try {
+            await window.axios.delete(`/api/employees/${emp.id}`);
+            setEmployees(prev => prev.filter(e => e.id !== emp.id));
+            if (selectedEmployeeId === emp.id) {
+                setSelectedEmployeeId(null);
+                setSelectedEmployee(null);
+            }
+        } catch (err) {
+            alert(err.response?.data?.message || 'Failed to delete employee');
+        } finally {
+            setDeletingId(null);
+        }
+    }
+
     async function openEditDrawer(emp) {
         setSelectedEmployeeId(emp.id);
         setDrawerMode('edit');
@@ -238,9 +427,9 @@ export default function Index({
             }
 
             const payload = {
-                employee_code: formEmployee.employeeCode,
-                first_name: formEmployee.firstName,
-                last_name: formEmployee.lastName,
+                employee_code: String(formEmployee.employeeCode || '').trim(),
+                first_name: String(formEmployee.firstName || '').trim(),
+                last_name: String(formEmployee.lastName || '').trim(),
                 department_id: Number(formEmployee.departmentId),
                 position: formEmployee.position || null,
                 daily_rate: Number(formEmployee.dailyRate || 0),
@@ -408,13 +597,23 @@ export default function Index({
                                     </span>
                                 </td>
                                 <td
-                                    className="whitespace-nowrap px-4 py-3 text-xs text-[#1E3A8A]"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        openEditDrawer(emp);
-                                    }}
+                                    className="whitespace-nowrap px-4 py-3 text-xs"
                                 >
-                                    Edit
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); openEditDrawer(emp); }}
+                                            className="text-[#1E3A8A] hover:underline"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); deleteEmployee(emp); }}
+                                            disabled={deletingId === emp.id}
+                                            className="text-red-500 hover:underline disabled:opacity-50"
+                                        >
+                                            {deletingId === emp.id ? '…' : 'Delete'}
+                                        </button>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
@@ -490,6 +689,17 @@ export default function Index({
                                     }`}
                                 >
                                     Contributions
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('advances')}
+                                    className={`border-b-2 py-2.5 text-sm font-medium transition ${
+                                        activeTab === 'advances'
+                                            ? 'border-[#1E3A8A] text-[#1E3A8A]'
+                                            : 'border-transparent text-slate-500 hover:text-slate-700'
+                                    }`}
+                                >
+                                    Cash Advances
                                 </button>
                             </nav>
                         </div>
@@ -766,6 +976,10 @@ export default function Index({
                                             ))}
                                         </div>
                                     </div>
+                                )}
+
+                                {activeTab === 'advances' && selectedEmployee && (
+                                    <CashAdvancesTab employeeId={selectedEmployee.id} />
                                 )}
                             </div>
 

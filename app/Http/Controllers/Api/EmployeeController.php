@@ -55,7 +55,7 @@ class EmployeeController extends Controller
             $employee->load([
                 'department',
                 'contributions.contributionType',
-                'cashAdvances'
+                'cashAdvances.payrollPeriod',
             ]);
 
             return response()->json($employee);

@@ -9,6 +9,7 @@ export default function ViolationFilters({ filters, onFilterChange, departments 
         start_date: filters.start_date || '',
         end_date: filters.end_date || '',
         department_id: filters.department_id || '',
+        show_dismissed: filters.show_dismissed || false,
     });
 
     const violationTypes = [
@@ -41,6 +42,7 @@ export default function ViolationFilters({ filters, onFilterChange, departments 
             start_date: '',
             end_date: '',
             department_id: '',
+            show_dismissed: false,
         };
         setLocalFilters(clearedFilters);
         onFilterChange(clearedFilters);
@@ -52,14 +54,19 @@ export default function ViolationFilters({ filters, onFilterChange, departments 
         <div className="rounded-lg border border-slate-200 bg-white shadow-sm p-4">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-900">Filters</h3>
-                {hasActiveFilters && (
-                    <button
-                        onClick={handleClear}
-                        className="text-xs text-primary hover:text-primary/80 font-medium transition"
-                    >
-                        Clear All
-                    </button>
-                )}
+                <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <input type="checkbox" checked={localFilters.show_dismissed}
+                            onChange={e => handleChange('show_dismissed', e.target.checked)}
+                            className="rounded border-slate-300 accent-primary" />
+                        <span className="text-xs text-slate-600">Show dismissed</span>
+                    </label>
+                    {hasActiveFilters && (
+                        <button onClick={handleClear} className="text-xs text-primary hover:text-primary/80 font-medium transition">
+                            Clear All
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

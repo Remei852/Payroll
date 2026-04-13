@@ -17,82 +17,112 @@ class AttendanceController extends Controller
 
     public function storeUpload(Request $request)
     {
-        // Increase execution time for large CSV uploads
-        set_time_limit(300); // 5 minutes
+        set_time_limit(300);
         ini_set('max_execution_time', 300);
         
         $request->validate([
-            'file' => 'required|file|mimes:csv,txt|max:10240', // 10MB max
+            'file' => 'required|file|mimes:csv,txt|max:10240',
         ]);
 
         try {
             $file = $request->file('file');
             $originalName = $file->getClientOriginalName();
             
-            // Store file temporarily
+            // Store temporarily, parse into attendance_logs only — no processing
             $path = $file->storeAs('temp', uniqid() . '_' . $originalName);
             $fullPath = Storage::path($path);
 
-            // Process CSV
             $uploadResults = $this->service->processCsvFile($fullPath, $originalName);
 
-            // Clean up temp file
             Storage::delete($path);
 
-            // Automatically process logs if upload was successful
-            $processResults = null;
-            if ($uploadResults['success'] > 0) {
-                try {
-                    // Get date range from ONLY the newly uploaded CSV (performance optimization)
-                    $dateRange = $this->service->getNewlyUploadedLogsDateRange($originalName);
-                    
-                    \Log::info('Date range for processing (from new CSV only)', $dateRange);
-                    
-                    if ($dateRange['start'] && $dateRange['end']) {
-                        $processResults = $this->service->processLogsToRecords(
-                            Carbon::parse($dateRange['start']),
-                            Carbon::parse($dateRange['end'])
-                        );
-                        
-                        \Log::info('Process results', $processResults);
-                    } else {
-                        \Log::warning('No date range found for processing');
-                    }
-                } catch (\Exception $e) {
-                    \Log::error('Error processing logs to records', [
-                        'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString(),
-                    ]);
-                }
-            }
-
-            // Get updated summary
             $summary = $this->service->getAttendanceSummary();
-
-            // Detect date gaps after processing
             $gapInfo = $this->service->detectDateGaps();
+            $uploadedFiles = $this->getUploadedFilesList();
 
             return Inertia::render('Attendance/Records', [
                 'attendanceSummary' => $summary,
+                'dateRange' => $this->service->getAttendanceRecordsDateRange(),
+                'gapInfo' => $gapInfo,
+                'uploadedFiles' => $uploadedFiles,
+                'departments' => \App\Models\Department::orderBy('name')->get(['id', 'name']),
                 'flash' => [
                     'success' => [
-                        'message' => 'CSV uploaded and processed successfully',
+                        'message' => "{$uploadResults['success']} logs imported from \"{$originalName}\". Review the file then click Process when ready.",
                         'uploadResults' => $uploadResults,
-                        'processResults' => $processResults,
                     ],
-                    'gapInfo' => $gapInfo, // Include gap info in flash message
                 ],
             ]);
         } catch (\Exception $e) {
-            \Log::error('Error in storeUpload', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            
-            return back()->withErrors([
-                'file' => 'Error processing file: ' . $e->getMessage(),
-            ]);
+            \Log::error('Error in storeUpload', ['error' => $e->getMessage()]);
+            return back()->withErrors(['file' => 'Error processing file: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Process logs from a specific uploaded file into attendance_records.
+     * Triggered manually by the user after reviewing uploaded files.
+     */
+    public function processFile(Request $request)
+    {
+        set_time_limit(300);
+        ini_set('max_execution_time', 300);
+
+        $request->validate([
+            'source_file' => 'required|string',
+        ]);
+
+        $sourceFile = $request->source_file;
+
+        try {
+            $dateRange = \App\Models\AttendanceLog::where('source_file', $sourceFile)
+                ->selectRaw('MIN(DATE(log_datetime)) as start, MAX(DATE(log_datetime)) as end')
+                ->first();
+
+            if (!$dateRange->start || !$dateRange->end) {
+                return response()->json(['error' => 'No logs found for this file'], 404);
+            }
+
+            $results = $this->service->processLogsToRecords(
+                Carbon::parse($dateRange->start),
+                Carbon::parse($dateRange->end)
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => "Processed {$results['processed']} days from \"{$sourceFile}\"",
+                'results' => $results,
+                'date_from' => $dateRange->start,
+                'date_to' => $dateRange->end,
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error processing file', ['source_file' => $sourceFile, 'error' => $e->getMessage()]);
+            return response()->json(['error' => 'Error processing file: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Helper to build the uploaded files list for the sidebar.
+     */
+    private function getUploadedFilesList(): \Illuminate\Support\Collection
+    {
+        return \App\Models\AttendanceLog::select(
+                'source_file',
+                \DB::raw('COUNT(*) as log_count'),
+                \DB::raw('MIN(DATE(log_datetime)) as date_from'),
+                \DB::raw('MAX(DATE(log_datetime)) as date_to'),
+                \DB::raw('MIN(log_datetime) as uploaded_at')
+            )
+            ->whereNotNull('source_file')
+            ->groupBy('source_file')
+            ->orderByDesc('uploaded_at')
+            ->get()
+            ->map(fn ($f) => [
+                'source_file' => $f->source_file,
+                'log_count' => $f->log_count,
+                'date_from' => $f->date_from,
+                'date_to' => $f->date_to,
+            ]);
     }
 
     public function processLogs(Request $request)
@@ -134,10 +164,18 @@ class AttendanceController extends Controller
         // Detect date gaps
         $gapInfo = $this->service->detectDateGaps();
 
+        // Get uploaded files grouped by source_file for the sidebar
+        $uploadedFiles = $this->getUploadedFilesList();
+
+        // Get departments for payroll generation step
+        $departments = \App\Models\Department::orderBy('name')->get(['id', 'name']);
+
         return Inertia::render('Attendance/Records', [
             'attendanceSummary' => $summary,
             'dateRange' => $dateRange,
             'gapInfo' => $gapInfo,
+            'uploadedFiles' => $uploadedFiles,
+            'departments' => $departments,
         ]);
     }
 
@@ -381,68 +419,108 @@ class AttendanceController extends Controller
     public function updateRecord(Request $request, int $recordId)
     {
         $request->validate([
-            'time_in_am' => 'nullable|date_format:H:i',
-            'time_out_lunch' => 'nullable|date_format:H:i',
-            'time_in_pm' => 'nullable|date_format:H:i',
-            'time_out_pm' => 'nullable|date_format:H:i',
-            'rendered' => 'nullable|numeric|min:0|max:1',
-            'status' => 'nullable|string',
-            'notes' => 'nullable|string|max:500',
-            'reason' => 'nullable|string|max:500',
+            'time_in_am'    => 'nullable|date_format:H:i',
+            'time_out_lunch'=> 'nullable|date_format:H:i',
+            'time_in_pm'    => 'nullable|date_format:H:i',
+            'time_out_pm'   => 'nullable|date_format:H:i',
+            'rendered'      => 'nullable|numeric|min:0|max:1',
+            'status'        => 'nullable|string',
+            'notes'         => 'nullable|string|max:500',
+            'reason'        => 'nullable|string|max:500',
         ]);
 
         try {
-            $record = \App\Models\AttendanceRecord::findOrFail($recordId);
-            
-            // Validate time chronological order if all times are provided
-            if ($request->filled(['time_in_am', 'time_out_lunch', 'time_in_pm', 'time_out_pm'])) {
-                $times = [
-                    $request->time_in_am,
-                    $request->time_out_lunch,
-                    $request->time_in_pm,
-                    $request->time_out_pm,
-                ];
-                
-                for ($i = 0; $i < count($times) - 1; $i++) {
-                    if ($times[$i] >= $times[$i + 1]) {
-                        return response()->json([
-                            'error' => 'Times must be in chronological order'
-                        ], 422);
+            $record = \App\Models\AttendanceRecord::with('schedule')->findOrFail($recordId);
+
+            // Validate chronological order when all times are provided
+            $times = array_filter([
+                $request->time_in_am,
+                $request->time_out_lunch,
+                $request->time_in_pm,
+                $request->time_out_pm,
+            ]);
+            $timeValues = array_values($times);
+            for ($i = 0; $i < count($timeValues) - 1; $i++) {
+                if ($timeValues[$i] >= $timeValues[$i + 1]) {
+                    return response()->json(['error' => 'Times must be in chronological order'], 422);
+                }
+            }
+
+            // Build update data from request
+            $editableFields = ['time_in_am', 'time_out_lunch', 'time_in_pm', 'time_out_pm', 'rendered', 'status', 'notes'];
+            $updateData = array_filter($request->only($editableFields), fn($v) => $v !== null);
+
+            // Recalculate late/undertime if any time fields changed
+            $timeFields = ['time_in_am', 'time_out_lunch', 'time_in_pm', 'time_out_pm'];
+            $timesChanged = collect($timeFields)->some(fn($f) => $request->has($f));
+
+            if ($timesChanged && $record->schedule) {
+                $schedule = $record->schedule;
+                $date = $record->attendance_date->format('Y-m-d');
+
+                $timeInAm   = $request->time_in_am    ?? $record->time_in_am;
+                $timeInPm   = $request->time_in_pm     ?? $record->time_in_pm;
+                $timeOutPm  = $request->time_out_pm    ?? $record->time_out_pm;
+
+                // Recalculate late AM
+                $lateAm = 0;
+                if ($timeInAm) {
+                    $startTime  = \Carbon\Carbon::parse($date . ' ' . $schedule->work_start_time);
+                    $graceMins  = ($schedule->grace_period_enabled ?? true) ? ($schedule->grace_period_minutes ?? 15) : 0;
+                    $graceTime  = $startTime->copy()->addMinutes($graceMins);
+                    $actualIn   = \Carbon\Carbon::parse($date . ' ' . $timeInAm);
+                    if ($actualIn->gt($graceTime)) {
+                        $lateAm = $startTime->diffInMinutes($actualIn);
                     }
                 }
+
+                // Recalculate late PM
+                $latePm = 0;
+                if ($timeInPm) {
+                    $breakEnd   = \Carbon\Carbon::parse($date . ' ' . $schedule->break_end_time);
+                    $actualPmIn = \Carbon\Carbon::parse($date . ' ' . $timeInPm);
+                    if ($actualPmIn->gt($breakEnd->copy()->addMinute())) {
+                        $latePm = $breakEnd->diffInMinutes($actualPmIn);
+                    }
+                }
+
+                // Recalculate undertime
+                $undertime = 0;
+                if ($timeOutPm && ($schedule->undertime_enabled ?? true)) {
+                    $endTime    = \Carbon\Carbon::parse($date . ' ' . $schedule->work_end_time);
+                    $allowance  = $schedule->undertime_allowance_minutes ?? 5;
+                    $actualOut  = \Carbon\Carbon::parse($date . ' ' . $timeOutPm);
+                    if ($actualOut->lt($endTime->copy()->subMinutes($allowance))) {
+                        $undertime = $endTime->diffInMinutes($actualOut);
+                    }
+                }
+
+                $updateData['late_minutes_am']  = $lateAm;
+                $updateData['late_minutes_pm']  = $latePm;
+                $updateData['undertime_minutes'] = $undertime;
             }
 
             // Track changes for audit trail
             $changes = [];
-            $editableFields = ['time_in_am', 'time_out_lunch', 'time_in_pm', 'time_out_pm', 'rendered', 'status', 'notes'];
-            
             foreach ($editableFields as $field) {
-                if ($request->has($field) && $request->filled($field)) {
-                    $oldValue = $record->{$field};
-                    $newValue = $request->{$field};
-                    
-                    if ($oldValue != $newValue) {
-                        $changes[] = [
-                            'field_name' => $field,
-                            'old_value' => $oldValue,
-                            'new_value' => $newValue,
-                            'reason' => $request->reason,
-                            'changed_by' => auth()->id(),
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ];
-                    }
+                if (isset($updateData[$field]) && $updateData[$field] != $record->{$field}) {
+                    $changes[] = [
+                        'attendance_record_id' => $record->id,
+                        'field_name'  => $field,
+                        'old_value'   => $record->{$field},
+                        'new_value'   => $updateData[$field],
+                        'reason'      => $request->reason,
+                        'changed_by'  => auth()->id(),
+                        'created_at'  => now(),
+                        'updated_at'  => now(),
+                    ];
                 }
             }
 
-            // Update the record
-            $updateData = $request->only($editableFields);
             $updateData['reviewed_by'] = auth()->id();
             $updateData['reviewed_at'] = now();
-            
             $record->update($updateData);
 
-            // Log all changes to audit trail
             if (!empty($changes)) {
                 \App\Models\AttendanceRecordChange::insert($changes);
             }
@@ -450,21 +528,13 @@ class AttendanceController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Attendance record updated successfully',
-                'record' => $record->load('reviewer', 'changes'),
+                'record'  => $record->fresh(),
             ]);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'error' => 'Attendance record not found'
-            ], 404);
+            return response()->json(['error' => 'Attendance record not found'], 404);
         } catch (\Exception $e) {
-            \Log::error('Error updating attendance record', [
-                'record_id' => $recordId,
-                'error' => $e->getMessage(),
-            ]);
-            
-            return response()->json([
-                'error' => 'Error updating record: ' . $e->getMessage()
-            ], 500);
+            \Log::error('Error updating attendance record', ['record_id' => $recordId, 'error' => $e->getMessage()]);
+            return response()->json(['error' => 'Error updating record: ' . $e->getMessage()], 500);
         }
     }
 
@@ -514,6 +584,85 @@ class AttendanceController extends Controller
                 'error' => 'Error fetching change history'
             ], 500);
         }
+    }
+    /**
+     * Delete all logs for a given source file and clean up orphaned attendance records.
+     */
+    public function deleteUpload(string $sourceFile)
+    {
+        $sourceFile = urldecode($sourceFile);
+
+        $meta = \App\Models\AttendanceLog::where('source_file', $sourceFile)
+            ->selectRaw('MIN(DATE(log_datetime)) as date_from, MAX(DATE(log_datetime)) as date_to')
+            ->first();
+
+        \App\Models\AttendanceLog::where('source_file', $sourceFile)->delete();
+
+        // After deleting the logs, remove any attendance_records whose date
+        // no longer has ANY logs remaining (from any file) for that employee.
+        // Payroll records are intentionally NOT deleted — once payroll is generated
+        // it is a financial record independent of the source attendance file.
+        if ($meta?->date_from && $meta?->date_to) {
+            $orphaned = \App\Models\AttendanceRecord::whereBetween('attendance_date', [$meta->date_from, $meta->date_to])
+                ->get()
+                ->filter(function ($record) {
+                    return !\App\Models\AttendanceLog::where('employee_code', function ($q) use ($record) {
+                            $q->select('employee_code')
+                              ->from('employees')
+                              ->where('id', $record->employee_id)
+                              ->limit(1);
+                        })
+                        ->whereDate('log_datetime', $record->attendance_date)
+                        ->exists();
+                })
+                ->pluck('id');
+
+            if ($orphaned->isNotEmpty()) {
+                \App\Models\AttendanceRecord::whereIn('id', $orphaned)->delete();
+            }
+        }
+
+        return redirect()->route('admin.attendance.index')
+            ->with('success', "File \"{$sourceFile}\" and its associated records have been deleted.");
+    }
+
+    /**
+     * Check if deleting a file would affect an already-generated payroll period.
+     * Returns a warning if overlap exists — used by the frontend before confirming delete.
+     */
+    public function checkDeleteImpact(string $sourceFile)
+    {
+        $sourceFile = urldecode($sourceFile);
+
+        $meta = \App\Models\AttendanceLog::where('source_file', $sourceFile)
+            ->selectRaw('MIN(DATE(log_datetime)) as date_from, MAX(DATE(log_datetime)) as date_to')
+            ->first();
+
+        if (!$meta?->date_from) {
+            return response()->json(['has_payroll' => false]);
+        }
+
+        $overlapping = \App\Models\PayrollPeriod::where(function ($q) use ($meta) {
+                $q->whereBetween('start_date', [$meta->date_from, $meta->date_to])
+                  ->orWhereBetween('end_date', [$meta->date_from, $meta->date_to])
+                  ->orWhere(function ($q2) use ($meta) {
+                      $q2->where('start_date', '<=', $meta->date_from)
+                         ->where('end_date', '>=', $meta->date_to);
+                  });
+            })
+            ->with('department')
+            ->get(['id', 'department_id', 'start_date', 'end_date', 'status']);
+
+        return response()->json([
+            'has_payroll' => $overlapping->isNotEmpty(),
+            'periods' => $overlapping->map(fn($p) => [
+                'id'         => $p->id,
+                'department' => $p->department->name ?? '—',
+                'start_date' => $p->start_date,
+                'end_date'   => $p->end_date,
+                'status'     => $p->status,
+            ]),
+        ]);
     }
 
     /**
