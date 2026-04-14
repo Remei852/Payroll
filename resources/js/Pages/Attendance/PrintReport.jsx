@@ -32,6 +32,8 @@ const statusColor = (status) => {
     if (s.includes('absent')) return 'text-red-600';
     if (s.includes('late'))   return 'text-orange-600';
     if (s.includes('missed')) return 'text-pink-600';
+    if (s.includes('undertime')) return 'text-purple-600';
+    if (s.includes('sunday work')) return 'text-indigo-600';
     return 'text-slate-700';
 };
 

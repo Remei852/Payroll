@@ -829,7 +829,44 @@ class AttendanceService
             }
         }
 
+        // ── Sanity check: lunch_in must be BEFORE afternoon_out ──────────────
+        // When inference misses a misclick, an early OUT can land in afternoon_out
+        // and a later IN lands in lunch_in — swapping them back fixes the display
+        // and ensures late-PM is calculated against the correct time.
+        if ($slots['lunch_in'] && $slots['afternoon_out']) {
+            $lunchInMins      = $this->timeToMinutes($slots['lunch_in']);
+            $afternoonOutMins = $this->timeToMinutes($slots['afternoon_out']);
+
+            if ($lunchInMins > $afternoonOutMins) {
+                [$slots['lunch_in'], $slots['afternoon_out']] = [$slots['afternoon_out'], $slots['lunch_in']];
+                Log::info('Fixed swapped PM slots (lunch_in was after afternoon_out)', [
+                    'corrected_lunch_in'      => $slots['lunch_in'],
+                    'corrected_afternoon_out' => $slots['afternoon_out'],
+                ]);
+            }
+        }
+
+        // ── Sanity check: morning_in must be BEFORE lunch_out ────────────────
+        if ($slots['morning_in'] && $slots['lunch_out']) {
+            if ($this->timeToMinutes($slots['morning_in']) > $this->timeToMinutes($slots['lunch_out'])) {
+                [$slots['morning_in'], $slots['lunch_out']] = [$slots['lunch_out'], $slots['morning_in']];
+                Log::info('Fixed swapped AM slots (morning_in was after lunch_out)', [
+                    'corrected_morning_in' => $slots['morning_in'],
+                    'corrected_lunch_out'  => $slots['lunch_out'],
+                ]);
+            }
+        }
+
         return $slots;
+    }
+
+    /**
+     * Convert HH:MM:SS or HH:MM time string to total minutes from midnight
+     */
+    private function timeToMinutes(string $time): int
+    {
+        $parts = explode(':', $time);
+        return ((int) $parts[0] * 60) + (int) ($parts[1] ?? 0);
     }
 
     /**
@@ -951,13 +988,16 @@ class AttendanceService
             }
         }
 
-        // If it's Sunday work
+        // If it's Sunday work (authorized) — treat like a regular working day
+        // so late/missed log/undertime checks still apply
         if ($override && $override->override_type === 'sunday_work') {
             if (empty($pairs) || $firstIn === null) {
                 return 'Absent';
-            } else {
-                return 'Present - Sunday Work';
             }
+            // Fall through to regular status checks below, but prefix with Sunday Work
+            $isSundayWork = true;
+        } else {
+            $isSundayWork = false;
         }
 
         // Regular working day logic
@@ -1004,11 +1044,12 @@ class AttendanceService
 
         // If no issues, mark as PRESENT
         if (empty($statuses)) {
-            return 'Present';
+            return $isSundayWork ? 'Present - Sunday Work' : 'Present';
         }
 
-        // Return combined status
-        return implode(', ', $statuses);
+        // Return combined status (prefix Sunday Work if applicable)
+        $combined = implode(', ', $statuses);
+        return $isSundayWork ? 'Sunday Work, ' . $combined : $combined;
     }
 
     /**
@@ -1400,16 +1441,21 @@ class AttendanceService
                 ]);
             }
             
-            // Create a temporary schedule with override times
+            // Create a temporary schedule with override times but inherit ALL
+            // tolerance/threshold settings from the base department schedule.
             $tempSchedule = new WorkSchedule([
-                'department_id' => $employee->department_id,
-                'work_start_time' => $override->opening_time,
-                'work_end_time' => $override->closing_time,
-                'break_start_time' => $baseSchedule->break_start_time,
-                'break_end_time' => $baseSchedule->break_end_time,
-                'grace_period_minutes' => $baseSchedule->grace_period_minutes ?? 15,
-                'is_working_day' => true,
-                'half_day_hours' => $baseSchedule->half_day_hours ?? 4,
+                'department_id'                  => $employee->department_id,
+                'work_start_time'                => $override->opening_time,
+                'work_end_time'                  => $override->closing_time,
+                'break_start_time'               => $baseSchedule->break_start_time,
+                'break_end_time'                 => $baseSchedule->break_end_time,
+                'grace_period_minutes'           => $baseSchedule->grace_period_minutes ?? 15,
+                'grace_period_enabled'           => $baseSchedule->grace_period_enabled ?? true,
+                'undertime_allowance_minutes'    => $baseSchedule->undertime_allowance_minutes ?? 5,
+                'undertime_enabled'              => $baseSchedule->undertime_enabled ?? true,
+                'monthly_late_allowance_minutes' => $baseSchedule->monthly_late_allowance_minutes ?? 0,
+                'is_working_day'                 => true,
+                'half_day_hours'                 => $baseSchedule->half_day_hours ?? 4,
             ]);
             
             // Set the ID so it can be referenced

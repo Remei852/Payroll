@@ -23,7 +23,10 @@ function getStatusBadges(status) {
         'Present - Holiday': 'bg-blue-100 text-blue-700',
         'Absent - Holiday': 'bg-slate-100 text-slate-700',
         'Absent - Holiday Pay': 'bg-slate-100 text-slate-700',
+        'Absent - Excused': 'bg-slate-100 text-slate-700',
+        'Present - Special Circumstances': 'bg-teal-100 text-teal-700',
         'Present - Sunday Work': 'bg-indigo-100 text-indigo-700',
+        'Sunday Work': 'bg-indigo-100 text-indigo-700',
         'Present - Unauthorized Work Day': 'bg-amber-100 text-amber-700',
     };
     return status.split(',').map(s => s.trim()).map((s, i) => (
