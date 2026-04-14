@@ -123,4 +123,10 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    // ── Admin credentials ─────────────────────────────────────────────────────
+    // Used to auto-create the admin user on first boot after migrate.
+    // Set these in your .env file.
+    'admin_email'    => env('ADMIN_EMAIL'),
+    'admin_password' => env('ADMIN_PASSWORD'),
+
 ];

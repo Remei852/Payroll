@@ -1,7 +1,7 @@
 import InputError from '@/Components/InputError';
 import { Head, useForm } from '@inertiajs/react';
 
-export default function Login({ status }) {
+export default function Login({ status, noUsersExist = false }) {
     const { data, setData, post, processing, errors, reset } = useForm({
         email: '',
         password: '',
@@ -67,9 +67,27 @@ export default function Login({ status }) {
                                 </p>
                             </div>
 
+                            {/* Setup warning — shown when no users exist in the database */}
+                            {noUsersExist && (
+                                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                                    <p className="font-semibold">Setup required</p>
+                                    <p className="mt-0.5">No admin account found. Run the following command then refresh:</p>
+                                    <code className="mt-1 block rounded bg-amber-100 px-2 py-1 text-xs font-mono">
+                                        php artisan db:seed
+                                    </code>
+                                </div>
+                            )}
+
                             {status && (
                                 <div className="mb-4 rounded-md bg-green-50 p-3 text-sm font-medium text-green-700">
                                     {status}
+                                </div>
+                            )}
+
+                            {/* Login error — shown as a banner, not just under the field */}
+                            {errors.email && (
+                                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                    {errors.email}
                                 </div>
                             )}
 
@@ -85,10 +103,9 @@ export default function Login({ status }) {
                                         autoComplete="username"
                                         autoFocus
                                         onChange={(e) => setData('email', e.target.value)}
-                                        className="mt-1 block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#1E3A8A] focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20"
+                                        className={`mt-1 block w-full rounded-lg border px-4 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 ${errors.email ? 'border-red-400 focus:border-red-400 focus:ring-red-200' : 'border-slate-300 focus:border-[#1E3A8A] focus:ring-[#1E3A8A]/20'}`}
                                         placeholder="admin@example.com"
                                     />
-                                    <InputError message={errors.email} className="mt-1.5" />
                                 </div>
 
                                 <div className="mt-4">
@@ -104,7 +121,6 @@ export default function Login({ status }) {
                                         className="mt-1 block w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-[#1E3A8A] focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20"
                                         placeholder="Enter your password"
                                     />
-                                    <InputError message={errors.password} className="mt-1.5" />
                                 </div>
 
                                 <div className="mt-4 flex items-center">
@@ -122,7 +138,7 @@ export default function Login({ status }) {
 
                                 <button
                                     type="submit"
-                                    disabled={processing}
+                                    disabled={processing || noUsersExist}
                                     className="mt-6 w-full rounded-lg bg-[#1E3A8A] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#1E3A8A]/90 focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/50 focus:ring-offset-2 disabled:opacity-50"
                                 >
                                     {processing ? 'Signing in...' : 'Sign in'}

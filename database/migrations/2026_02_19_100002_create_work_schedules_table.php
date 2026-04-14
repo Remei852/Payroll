@@ -25,12 +25,6 @@ return new class extends Migration
             $table->decimal('half_day_hours', 4, 2)->default(4.00);
             $table->timestamps();
         });
-        
-        // Fix PostgreSQL sequence if table has existing data
-        // This ensures auto-increment starts from the correct number
-        if (DB::getDriverName() === 'pgsql') {
-            DB::statement("SELECT setval('work_schedules_id_seq', (SELECT COALESCE(MAX(id), 1) FROM work_schedules))");
-        }
     }
 
     public function down(): void

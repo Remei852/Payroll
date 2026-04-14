@@ -381,6 +381,10 @@ export default function Index({
 
     async function handleBasicSubmit(e) {
         e.preventDefault();
+        // Don't submit the employee form when the user is on the Cash Advances tab.
+        // The advances tab has its own inner form — HTML doesn't support nested forms,
+        // so any submit inside it bubbles up here instead.
+        if (activeTab === 'advances') return;
         setSubmitting(true);
 
         try {
@@ -983,7 +987,8 @@ export default function Index({
                                 )}
                             </div>
 
-                            {(drawerMode === 'create' || drawerMode === 'edit') && (
+                            {/* Save/Cancel footer — hidden on advances tab since it has its own actions */}
+                            {(drawerMode === 'create' || drawerMode === 'edit') && activeTab !== 'advances' && (
                                 <div className="shrink-0 border-t border-slate-200 bg-slate-50 px-5 py-3">
                                     <div className="flex items-center justify-end gap-3">
                                         <button

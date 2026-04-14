@@ -5,111 +5,121 @@ A Laravel + React (Inertia.js) attendance management system.
 ## Requirements
 
 - PHP 8.2+
+- Composer
 - Node.js 18+
-- One of: MySQL 8+, PostgreSQL 14+, or SQLite 3
+- PostgreSQL 14+
 
-## Setup
+## Fresh Setup (first time on a new machine)
+
+### 1. Clone and install dependencies
 
 ```bash
-# 1. Clone the repo
 git clone <repo-url>
 cd attendance-checker
 
-# 2. Install PHP dependencies
 composer install
-
-# 3. Install JS dependencies
 npm install
+```
 
-# 4. Copy and configure environment
+### 2. Create your environment file
+
+```bash
 cp .env.example .env
 php artisan key:generate
 ```
 
-### 5. Configure your database in `.env`
+Open `.env` and fill in your PostgreSQL password:
 
-**MySQL** (most common):
 ```env
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=attendance_checker
-DB_USERNAME=root
-DB_PASSWORD=your_password
+DB_PASSWORD=your_postgres_password
 ```
 
-**PostgreSQL**:
+Also set your admin login credentials:
+
 ```env
-DB_CONNECTION=pgsql
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_DATABASE=attendance_checker
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=your_chosen_password
 ```
 
-**SQLite** (no server needed):
-```env
-DB_CONNECTION=sqlite
-DB_DATABASE=/absolute/path/to/database.sqlite
-```
-Then create the file: `touch database/database.sqlite`
+### 3. Create the database
 
-### 6. Run migrations and seed
+In pgAdmin or psql:
+
+```sql
+CREATE DATABASE attendance_checker;
+```
+
+### 4. Run migrations and seed
 
 ```bash
 php artisan migrate
 php artisan db:seed
 ```
 
-This creates the default admin account:
-- Email: `admin@example.com`
-- Password: `password`
+This creates:
+- All database tables
+- 5 departments with work schedules
+- 22 employees
+- Philippine holidays
+- SSS, PhilHealth, Pag-IBIG, Withholding Tax contribution types
+- Admin user (from your `.env` credentials)
 
-### 7. Build and run
+### 5. Build and run
 
 ```bash
-# Build frontend assets
+# Build frontend
 npm run build
 
-# Start the dev server
+# Start the server
 php artisan serve
 ```
 
-Or for frontend hot-reload during development:
+Visit `http://localhost:8000` and log in with your `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+
+---
+
+## Daily development (after first setup)
+
 ```bash
-# Terminal 1
+# Terminal 1 — backend
 php artisan serve
 
-# Terminal 2
+# Terminal 2 — frontend hot reload
 npm run dev
 ```
 
-Visit `http://localhost:8000`
+---
 
 ## Usage
 
-1. Log in with the admin account
-2. Go to **Employees** and add your employees
-3. Go to **Settings → Work Schedules** to configure schedules per department
-4. Go to **Attendance** and upload a CSV file
-5. Click **Process** on the uploaded file to generate attendance records
-6. Review the records in Step 2, then proceed to generate payroll
+1. Go to **Attendance** → upload a CSV file
+2. Click **Process** on the uploaded file
+3. Review the records in Step 2
+4. Generate payroll in Step 3
 
-## CSV Format
+### CSV Format
 
-The attendance CSV must have these columns in order:
 ```
 Employee ID, Department, Employee Name, Time, Date, Activity, Image, Address
 ```
-- Date format: `MM/DD/YYYY`
+
+- Date: `MM/DD/YYYY`
 - Activity: `IN` or `OUT`
+- Employee ID must match the `employee_code` in the Employees table
+
+---
 
 ## Troubleshooting
 
-**"Error processing file"** — This usually means:
-- No employees exist in the database (run `php artisan db:seed` and add employees)
-- Database migration failed (check `php artisan migrate:status`)
-- PHP `max_execution_time` is too low for large files (set to 300s in `php.ini`)
+**"Error processing file" when clicking Process**
+- Check `storage/logs/laravel.log` for the exact error
+- Make sure employees exist (run `php artisan db:seed` if not)
+- Make sure the CSV employee codes match exactly
 
-**Table shows 0 employees after processing** — The CSV employee codes must match the `employee_code` field in the employees table exactly.
+**"duplicate key" error when adding a department**
+- Run: `php artisan migrate:fresh --seed`
+- This resets everything — only do this on a fresh install
+
+**Page shows blank / 500 error**
+- Run `php artisan config:clear && php artisan cache:clear`
+- Check `APP_KEY` is set in `.env`
