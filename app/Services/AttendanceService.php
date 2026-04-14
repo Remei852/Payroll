@@ -292,6 +292,7 @@ class AttendanceService
         $isLateAM = $this->isLate($firstIn, $schedule);
         $isLatePM = $this->isLatePM($timeSlots['lunch_in'], $schedule);
         $isUndertime = $this->isUndertime($lastOut, $schedule);
+        $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'], $schedule);
         $hasIncompleteLogs = $this->hasIncompleteLogs($inferredLogs);
         $hasDuplicates = count($logs) !== count($uniqueLogs);
 
@@ -303,8 +304,9 @@ class AttendanceService
         // Calculate overtime minutes
         $overtimeMinutes = $this->calculateOvertimeMinutes($lastOut, $schedule);
         
-        // Calculate undertime minutes
-        $undertimeMinutes = $this->calculateUndertimeMinutes($lastOut, $schedule);
+        // Calculate undertime minutes (afternoon out + early lunch out combined)
+        $undertimeMinutes = $this->calculateUndertimeMinutes($lastOut, $schedule)
+                          + $this->calculateEarlyLunchOutMinutes($timeSlots['lunch_out'], $schedule);
 
         // Count missed logs (only if not absent)
         $missedLogsCount = $this->countMissedLogs($timeSlots, $pairs, $schedule);
@@ -995,7 +997,8 @@ class AttendanceService
 
         // Priority 4: UNDERTIME (only if not absent)
         $isUndertime = $this->isUndertime($lastOut, $schedule);
-        if ($isUndertime) {
+        $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'] ?? null, $schedule);
+        if ($isUndertime || $isEarlyLunchOut) {
             $statuses[] = 'Undertime';
         }
 
@@ -1087,7 +1090,7 @@ class AttendanceService
 
     /**
      * Check if employee is late returning from lunch (PM).
-     * Uses a 1-minute threshold after break_end_time.
+     * Uses the same grace_period_minutes as morning late tolerance.
      */
     private function isLatePM(?string $pmIn, WorkSchedule $schedule): bool
     {
@@ -1097,11 +1100,15 @@ class AttendanceService
         $breakEnd = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_end_time);
         $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $pmIn);
 
-        return $actualIn->gt($breakEnd->copy()->addMinute());
+        $graceMins = ($schedule->grace_period_enabled ?? true)
+            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
+            : 0;
+
+        return $actualIn->gt($breakEnd->copy()->addMinutes($graceMins));
     }
 
     /**
-     * Calculate afternoon late minutes.
+     * Calculate afternoon late minutes (from break_end_time, using grace period).
      */
     private function calculateLatePM(?string $pmIn, WorkSchedule $schedule): int
     {
@@ -1111,7 +1118,11 @@ class AttendanceService
         $breakEnd = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_end_time);
         $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $pmIn);
 
-        if ($actualIn->gt($breakEnd->copy()->addMinute())) {
+        $graceMins = ($schedule->grace_period_enabled ?? true)
+            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
+            : 0;
+
+        if ($actualIn->gt($breakEnd->copy()->addMinutes($graceMins))) {
             return $breakEnd->diffInMinutes($actualIn);
         }
 
@@ -1119,7 +1130,7 @@ class AttendanceService
     }
 
     /**
-     * Check if employee has undertime.
+     * Check if employee has undertime on afternoon out.
      * Uses schedule's undertime_enabled and undertime_allowance_minutes.
      */
     private function isUndertime(?string $lastOut, WorkSchedule $schedule): bool
@@ -1133,6 +1144,23 @@ class AttendanceService
         $actualOut = Carbon::parse($today->format('Y-m-d') . ' ' . $lastOut);
 
         return $actualOut->lt($endTime->copy()->subMinutes($allowance));
+    }
+
+    /**
+     * Check if employee left early for lunch (before break_start_time - allowance).
+     */
+    private function isEarlyLunchOut(?string $lunchOut, WorkSchedule $schedule): bool
+    {
+        if (!$lunchOut) return false;
+        if (!($schedule->undertime_enabled ?? true)) return false;
+        if (!$schedule->break_start_time) return false;
+
+        $today      = Carbon::today();
+        $breakStart = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_start_time);
+        $allowance  = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
+        $actualOut  = Carbon::parse($today->format('Y-m-d') . ' ' . $lunchOut);
+
+        return $actualOut->lt($breakStart->copy()->subMinutes($allowance));
     }
 
     /**
@@ -1150,6 +1178,27 @@ class AttendanceService
 
         if ($actualOut->lt($endTime->copy()->subMinutes($allowance))) {
             return $endTime->diffInMinutes($actualOut);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Calculate early lunch-out undertime minutes (left before break_start_time - allowance).
+     */
+    private function calculateEarlyLunchOutMinutes(?string $lunchOut, WorkSchedule $schedule): int
+    {
+        if (!$lunchOut) return 0;
+        if (!($schedule->undertime_enabled ?? true)) return 0;
+        if (!$schedule->break_start_time) return 0;
+
+        $today      = Carbon::today();
+        $breakStart = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_start_time);
+        $allowance  = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
+        $actualOut  = Carbon::parse($today->format('Y-m-d') . ' ' . $lunchOut);
+
+        if ($actualOut->lt($breakStart->copy()->subMinutes($allowance))) {
+            return $breakStart->diffInMinutes($actualOut);
         }
 
         return 0;

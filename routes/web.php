@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\EmployeeController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ScheduleOverrideController;
@@ -36,6 +37,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/attendance/process-file', [AttendanceController::class, 'processFile'])->name('admin.attendance.process-file');
     Route::delete('/attendance/uploads/{sourceFile}', [AttendanceController::class, 'deleteUpload'])->name('admin.attendance.uploads.destroy')->where('sourceFile', '.*');
     Route::get('/attendance/uploads/{sourceFile}/impact', [AttendanceController::class, 'checkDeleteImpact'])->name('admin.attendance.uploads.impact')->where('sourceFile', '.*');
+
+    // Attendance Reports
+    Route::get('/attendance/report', [AttendanceReportController::class, 'index'])->name('admin.attendance.report');
+    Route::post('/attendance/report/generate', [AttendanceReportController::class, 'generate'])->name('admin.attendance.report.generate');
 
     Route::get('/attendance/summary', function () {
         return Inertia::render('Attendance/Summary');
