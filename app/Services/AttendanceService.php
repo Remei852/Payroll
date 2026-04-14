@@ -1218,7 +1218,7 @@ class AttendanceService
         $actualOut = Carbon::parse($today->format('Y-m-d') . ' ' . $lastOut);
 
         if ($actualOut->lt($endTime->copy()->subMinutes($allowance))) {
-            return $endTime->diffInMinutes($actualOut);
+            return max(0, (int) $endTime->diffInMinutes($actualOut));
         }
 
         return 0;
@@ -1239,7 +1239,7 @@ class AttendanceService
         $actualOut  = Carbon::parse($today->format('Y-m-d') . ' ' . $lunchOut);
 
         if ($actualOut->lt($breakStart->copy()->subMinutes($allowance))) {
-            return $breakStart->diffInMinutes($actualOut);
+            return max(0, (int) $breakStart->diffInMinutes($actualOut));
         }
 
         return 0;

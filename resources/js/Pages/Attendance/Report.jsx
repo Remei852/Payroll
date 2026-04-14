@@ -32,6 +32,7 @@ export default function AttendanceReport({ employees }) {
             date_to:      dateTo,
             employee_ids: isAll ? [] : selected,
         }, {
+            replace: true,   // replaces history entry so Back doesn't re-hit the POST URL
             onFinish: () => setLoading(false),
         });
     };

@@ -5,10 +5,25 @@ import React from 'react';
 import ViolationLetterModal from '@/Components/ViolationLetterModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+// Format an integer number of minutes as HH:MM (used for late/undertime/OT columns)
 function fmtTime(min) {
     if (!min || min === 0) return '00:00';
-    const h = Math.floor(Math.abs(min) / 60), m = Math.abs(min) % 60;
+    const abs = Math.abs(Math.round(min));
+    const h = Math.floor(abs / 60);
+    const m = abs % 60;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+}
+
+// Format a HH:MM:SS or HH:MM time string as 12-hour time (used for clock-in/out columns)
+function fmtClock(t) {
+    if (!t) return '—';
+    const parts = t.split(':');
+    const hour = parseInt(parts[0], 10);
+    const min  = parts[1] ?? '00';
+    if (isNaN(hour)) return t;
+    const ampm = hour >= 12 ? 'PM' : 'AM';
+    const h12  = hour % 12 || 12;
+    return `${h12}:${min} ${ampm}`;
 }
 
 function getStatusBadges(status) {
@@ -163,16 +178,16 @@ function EditableRecordRow({ record, onSave, onViewHistory, historyOpen }) {
                 {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
             </td>
             <td className="whitespace-nowrap px-3 py-2">
-                <span className={record.late_minutes_am > 0 ? 'font-semibold text-orange-600' : 'text-slate-700'}>{record.time_in_am || <span className="text-slate-300">—</span>}</span>
+                <span className={record.late_minutes_am > 0 ? 'font-semibold text-orange-600' : 'text-slate-700'}>{fmtClock(record.time_in_am)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
-                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-blue-500'}>{record.time_out_lunch || <span className="text-slate-300">—</span>}</span>
+                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-blue-500'}>{fmtClock(record.time_out_lunch)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
-                <span className={record.late_minutes_pm > 0 ? 'font-semibold text-orange-600' : 'text-slate-700'}>{record.time_in_pm || <span className="text-slate-300">—</span>}</span>
+                <span className={record.late_minutes_pm > 0 ? 'font-semibold text-orange-600' : 'text-slate-700'}>{fmtClock(record.time_in_pm)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
-                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-blue-500'}>{record.time_out_pm || <span className="text-slate-300">—</span>}</span>
+                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-blue-500'}>{fmtClock(record.time_out_pm)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2 text-center">
                 <span className={record.late_minutes_am > 0 ? 'font-semibold text-orange-600' : 'text-slate-400'}>{fmtTime(record.late_minutes_am)}</span>
