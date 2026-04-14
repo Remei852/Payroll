@@ -71,17 +71,21 @@ class EmployeeSeeder extends Seeder
                 // Create work schedule for this department
                 $schedule = $departmentSchedules[$deptName] ?? ['start' => '08:00:00', 'end' => '17:00:00'];
                 DB::table('work_schedules')->insert([
-                    'department_id' => $id,
-                    'name' => $deptName . ' Schedule', // Auto-generate name from department
-                    'work_start_time' => $schedule['start'],
-                    'work_end_time' => $schedule['end'],
-                    'break_start_time' => '12:00:00',
-                    'break_end_time' => '13:00:00',
-                    'grace_period_minutes' => 15,
-                    'is_working_day' => true,
-                    'half_day_hours' => 4,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'department_id'               => $id,
+                    'name'                        => $deptName . ' Schedule',
+                    'work_start_time'             => $schedule['start'],
+                    'work_end_time'               => $schedule['end'],
+                    'break_start_time'            => '12:00:00',
+                    'break_end_time'              => '13:00:00',
+                    'grace_period_minutes'        => 15,
+                    'grace_period_enabled'        => true,
+                    'undertime_allowance_minutes' => 5,
+                    'undertime_enabled'           => true,
+                    'monthly_late_allowance_minutes' => 0,
+                    'is_working_day'              => true,
+                    'half_day_hours'              => 4,
+                    'created_at'                  => now(),
+                    'updated_at'                  => now(),
                 ]);
             } else {
                 $departments[$deptName] = $department->id;

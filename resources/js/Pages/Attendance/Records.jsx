@@ -395,7 +395,7 @@ export default function AttendanceRecords() {
 
     function showToast(type, message, detail = null) {
         setToast({ type, message, detail });
-        setTimeout(() => setToast(null), 4000);
+        setTimeout(() => setToast(null), type === 'error' ? 8000 : 4000);
     }
 
     function handleDeleteFile(sourceFile) {
@@ -445,11 +445,14 @@ export default function AttendanceRecords() {
                 if (processedFile) setActiveFile(processedFile);
                 router.reload({ only: ['attendanceSummary', 'dateRange', 'gapInfo'] });
             } else {
-                showToast('error', data.error || 'Failed to process file');
+                const errMsg = data.error || data.message || 'Failed to process file';
+                showToast('error', 'Processing failed', errMsg);
+                setProcessResults(prev => ({ ...prev, [sourceFile]: errMsg }));
             }
-        } catch {
-            showToast('error', 'Error processing file');
-            setProcessResults(prev => ({ ...prev, [sourceFile]: 'Error processing file' }));
+        } catch (err) {
+            const msg = err?.message || 'Network error — check your server is running';
+            showToast('error', 'Error processing file', msg);
+            setProcessResults(prev => ({ ...prev, [sourceFile]: msg }));
         } finally {
             setProcessing(null);
         }

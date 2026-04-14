@@ -96,7 +96,7 @@ class AttendanceController extends Controller
                 'date_to' => $dateRange->end,
             ]);
         } catch (\Exception $e) {
-            \Log::error('Error processing file', ['source_file' => $sourceFile, 'error' => $e->getMessage()]);
+            \Log::error('Error processing file', ['source_file' => $sourceFile, 'error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
             return response()->json(['error' => 'Error processing file: ' . $e->getMessage()], 500);
         }
     }
@@ -478,8 +478,9 @@ class AttendanceController extends Controller
                 $latePm = 0;
                 if ($timeInPm) {
                     $breakEnd   = \Carbon\Carbon::parse($date . ' ' . $schedule->break_end_time);
+                    $graceMins  = ($schedule->grace_period_enabled ?? true) ? ($schedule->grace_period_minutes ?? 15) : 0;
                     $actualPmIn = \Carbon\Carbon::parse($date . ' ' . $timeInPm);
-                    if ($actualPmIn->gt($breakEnd->copy()->addMinute())) {
+                    if ($actualPmIn->gt($breakEnd->copy()->addMinutes($graceMins))) {
                         $latePm = $breakEnd->diffInMinutes($actualPmIn);
                     }
                 }

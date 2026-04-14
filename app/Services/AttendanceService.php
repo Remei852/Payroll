@@ -1420,7 +1420,11 @@ class AttendanceService
         
         // If there's an override with a custom schedule_id, use it
         if ($override && $override->schedule_id) {
-            return WorkSchedule::find($override->schedule_id);
+            $overrideSchedule = WorkSchedule::find($override->schedule_id);
+            if ($overrideSchedule) {
+                return $overrideSchedule;
+            }
+            // Schedule was deleted — fall through to department default
         }
 
         // If it's a holiday with a custom schedule, you could add that logic here

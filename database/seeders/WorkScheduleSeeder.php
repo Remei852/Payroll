@@ -21,23 +21,31 @@ class WorkScheduleSeeder extends Seeder
 
         $rows = array_map(function ($s) use ($now) {
             return [
-                'id' => $s['id'],
-                'name' => $s['name'],
-                'work_start_time' => $s['work_start_time'],
-                'work_end_time' => $s['work_end_time'],
-                'break_start_time' => $s['break_start_time'],
-                'break_end_time' => $s['break_end_time'],
-                'grace_period_minutes' => 15,
-                'is_working_day' => true,
-                'created_at' => $now,
-                'updated_at' => $now,
+                'id'                          => $s['id'],
+                'name'                        => $s['name'],
+                'work_start_time'             => $s['work_start_time'],
+                'work_end_time'               => $s['work_end_time'],
+                'break_start_time'            => $s['break_start_time'],
+                'break_end_time'              => $s['break_end_time'],
+                'grace_period_minutes'        => 15,
+                'grace_period_enabled'        => true,
+                'undertime_allowance_minutes' => 5,
+                'undertime_enabled'           => true,
+                'monthly_late_allowance_minutes' => 0,
+                'is_working_day'              => true,
+                'half_day_hours'              => 4,
+                'created_at'                  => $now,
+                'updated_at'                  => $now,
             ];
         }, $schedules);
 
         WorkSchedule::query()->upsert(
             $rows,
             ['id'],
-            ['name', 'work_start_time', 'work_end_time', 'break_start_time', 'break_end_time', 'grace_period_minutes', 'is_working_day', 'updated_at']
+            ['name', 'work_start_time', 'work_end_time', 'break_start_time', 'break_end_time',
+             'grace_period_minutes', 'grace_period_enabled', 'undertime_allowance_minutes',
+             'undertime_enabled', 'monthly_late_allowance_minutes', 'is_working_day',
+             'half_day_hours', 'updated_at']
         );
     }
 }
