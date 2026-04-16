@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Attendance Violation Notices</title>
     <style>
-        @page { size: A4; margin: 0; }
+        @page { size: auto; margin: 15mm 18mm; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
@@ -16,7 +16,6 @@
         }
 
         .letter-page {
-            padding: 15mm 18mm 15mm 18mm;
             page-break-after: always;
         }
         .letter-page:last-child { page-break-after: avoid; }

@@ -353,6 +353,7 @@ class AttendanceController extends Controller
             'dateFrom'           => 'nullable|date',
             'dateTo'             => 'nullable|date|after_or_equal:dateFrom',
             'preview'            => 'nullable|boolean',
+            'paper_size'         => 'nullable|in:A4,legal,letter',
             'content'            => 'nullable|array',
             'content.subject'    => 'nullable|string|max:300',
             'content.opening'    => 'nullable|string|max:1000',
@@ -413,7 +414,10 @@ class AttendanceController extends Controller
             ];
 
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.violation-letter', $data);
-            $pdf->setPaper('A4', 'portrait');
+            $paperSize = in_array($request->input('paper_size'), ['A4', 'legal', 'letter'])
+                ? $request->input('paper_size')
+                : 'A4';
+            $pdf->setPaper($paperSize, 'portrait');
 
             $filename = 'Violation_Letter_' . $employee->employee_code . '_' . Carbon::now()->format('Y-m-d') . '.pdf';
 
@@ -537,6 +541,7 @@ class AttendanceController extends Controller
             'dateFrom' => 'nullable|date',
             'dateTo'   => 'nullable|date|after_or_equal:dateFrom',
             'markSent' => 'nullable|in:0,1',
+            'paper_size' => 'nullable|in:A4,legal,letter',
         ]);
 
         try {
@@ -590,7 +595,10 @@ class AttendanceController extends Controller
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.violation-letter-bulk', [
                 'employees' => $allEmployeeData,
             ]);
-            $pdf->setPaper('A4', 'portrait');
+            $bulkPaperSize = in_array($request->input('paper_size'), ['A4', 'legal', 'letter'])
+                ? $request->input('paper_size')
+                : 'A4';
+            $pdf->setPaper($bulkPaperSize, 'portrait');
 
             $filename = 'Violation_Letters_' . Carbon::now()->format('Y-m-d') . '.pdf';
 

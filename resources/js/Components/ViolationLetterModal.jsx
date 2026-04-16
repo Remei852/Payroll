@@ -106,11 +106,11 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
                     <EditableBlock value={content.dateIssued} onChange={v => onChange('dateIssued', v)} multiline={false}
                         style={{ fontSize: '9pt', color: '#1e293b' }} />
                 </div>
-                <div style={{ display: 'flex', marginBottom: 2 }}>
-                    <ReadOnly style={{ width: 110, fontWeight: 700, color: '#475569', flexShrink: 0 }}>Reference No.:</ReadOnly>
-                    <EditableBlock value={content.referenceNo || '—'} onChange={v => onChange('referenceNo', v === '—' ? '' : v)} multiline={false}
+              { /*    <div style={{ display: 'flex', marginBottom: 2 }}>
+              { /*      <ReadOnly style={{ width: 110, fontWeight: 700, color: '#475569', flexShrink: 0 }}>Reference No.:</ReadOnly> 
+                    <EditableBlock value={content.referenceNo || ''} onChange={v => onChange('referenceNo', v === '—' ? '' : v)} multiline={false}
                         style={{ fontSize: '9pt', color: '#1e293b' }} />
-                </div>
+                </div>*/}
             </div>
 
             <hr style={{ border: 0, borderTop: '1px solid #cbd5e1', margin: '8px 0' }} />
@@ -263,6 +263,8 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
     const [content, setContent]     = useState(null);
     const [defaults, setDefaults]   = useState(null);
     const [downloading, setDownloading] = useState(false);
+    const [paperSize, setPaperSize]     = useState('A4');
+    const [exportFormat, setExportFormat] = useState('pdf');
 
     const companyName    = document.querySelector('meta[name="company-name"]')?.content
                         || window.__APP_NAME__
@@ -296,6 +298,10 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
     const handleReset = () => defaults && setContent({ ...defaults });
 
     const handleDownload = () => {
+        if (exportFormat === 'word') {
+            handleWordDownload();
+            return;
+        }
         setDownloading(true);
         const params = new URLSearchParams();
         if (dateFilters?.dateFrom) params.append('dateFrom', dateFilters.dateFrom);
@@ -311,6 +317,10 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
         csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
         form.appendChild(csrf);
 
+        const sizeInput = document.createElement('input');
+        sizeInput.type = 'hidden'; sizeInput.name = 'paper_size'; sizeInput.value = paperSize;
+        form.appendChild(sizeInput);
+
         Object.entries(content).forEach(([k, v]) => {
             const inp = document.createElement('input');
             inp.type = 'hidden'; inp.name = `content[${k}]`; inp.value = v;
@@ -321,6 +331,105 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
         form.submit();
         document.body.removeChild(form);
         setTimeout(() => setDownloading(false), 1500);
+    };
+
+    const handleWordDownload = () => {
+        if (!data || !content) return;
+        setDownloading(true);
+        const { employee, dateRange, violations: v, summary } = data;
+
+        const fmtDate = s => s || '—';
+        const missRow = (r) => `
+            <tr>
+                <td>${r.dateFormatted}</td>
+                <td style="color:${!r.timeInAM?'#dc2626':'inherit'}">${r.timeInAM||'—'}</td>
+                <td style="color:${!r.timeOutLunch?'#dc2626':'inherit'}">${r.timeOutLunch||'—'}</td>
+                <td style="color:${!r.timeInPM?'#dc2626':'inherit'}">${r.timeInPM||'—'}</td>
+                <td style="color:${!r.timeOutPM?'#dc2626':'inherit'}">${r.timeOutPM||'—'}</td>
+                <td style="color:#dc2626;font-weight:bold">${r.missing.join(', ')}</td>
+            </tr>`;
+
+        const thStyle = 'background:#1e3a8a;color:#fff;padding:4px 8px;font-size:9pt;text-align:left;';
+        const tdStyle = 'padding:3px 8px;border-bottom:1px solid #e2e8f0;font-size:9pt;';
+
+        const html = `
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+      xmlns:w="urn:schemas-microsoft-com:office:word"
+      xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="UTF-8">
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<style>
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #1e293b; margin: 2cm 2.5cm; }
+  h1 { font-size: 12pt; font-weight: bold; text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
+  table { border-collapse: collapse; width: auto; margin-bottom: 10px; }
+  th { ${thStyle} }
+  td { ${tdStyle} }
+  .info-table td { border: none; padding: 2px 6px; }
+  .section { font-weight: bold; font-size: 9.5pt; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 10px 0 5px; }
+  .chip { display: inline-block; border: 1px solid #cbd5e1; border-radius: 3px; padding: 1px 6px; font-size: 8.5pt; margin-right: 4px; }
+  .action-box { border: 1px solid #cbd5e1; padding: 8px 12px; background: #fefce8; margin-bottom: 10px; }
+  .sig-table { width: 100%; margin-top: 24px; }
+  .sig-table td { border: none; padding: 0 20px 0 0; vertical-align: bottom; width: 50%; }
+  .sig-line { border-bottom: 1px solid #64748b; width: 200px; margin-top: 30px; margin-bottom: 4px; }
+  p { text-align: justify; margin-bottom: 8px; font-size: 9.5pt; line-height: 1.55; }
+</style>
+</head>
+<body>
+<h1>${content.subject}</h1>
+<table class="info-table">
+  <tr><td style="width:120px;font-weight:bold;color:#475569">Employee Name:</td><td>${employee.name}</td></tr>
+  <tr><td style="font-weight:bold;color:#475569">Employee Code:</td><td>${employee.code}</td></tr>
+  <tr><td style="font-weight:bold;color:#475569">Department:</td><td>${employee.department}</td></tr>
+  <tr><td style="font-weight:bold;color:#475569">Period Covered:</td><td>${dateRange.startFormatted} to ${dateRange.endFormatted}</td></tr>
+  <tr><td style="font-weight:bold;color:#475569">Date Issued:</td><td>${content.dateIssued}</td></tr>
+</table>
+<hr style="border:0;border-top:1px solid #cbd5e1;margin:8px 0"/>
+<p>${content.opening}</p>
+<p>${content.policyParagraph}</p>
+<div>
+  ${summary.totalAbsences>0?`<span class="chip">Absences: <b style="color:#dc2626">${summary.totalAbsences}</b></span>`:''}
+  ${summary.totalLateAM>0?`<span class="chip">Late AM: <b style="color:#dc2626">${summary.totalLateAM}</b></span>`:''}
+  ${summary.totalLatePM>0?`<span class="chip">Late PM: <b style="color:#dc2626">${summary.totalLatePM}</b></span>`:''}
+  ${summary.totalMissedLogs>0?`<span class="chip">Missing Logs: <b style="color:#dc2626">${summary.totalMissedLogs}</b></span>`:''}
+  ${summary.totalUndertime>0?`<span class="chip">Undertime: <b style="color:#dc2626">${summary.totalUndertime}</b></span>`:''}
+</div>
+${v.absences.length>0?`
+<div class="section">Absences (${summary.totalAbsences} ${summary.totalAbsences===1?'day':'days'})</div>
+<table><thead><tr><th style="width:140px">Date</th><th>Status</th></tr></thead>
+<tbody>${v.absences.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.status}</td></tr>`).join('')}</tbody></table>`:''}
+${v.lateAM.length>0?`
+<div class="section">Late Arrivals — Morning (${summary.totalLateAM} ${summary.totalLateAM===1?'instance':'instances'})</div>
+<table><thead><tr><th style="width:140px">Date</th><th style="width:90px">Time In</th><th>Late By</th></tr></thead>
+<tbody>${v.lateAM.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.timeIn||'—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>`:''}
+${v.latePM.length>0?`
+<div class="section">Late Returns — Afternoon (${summary.totalLatePM} ${summary.totalLatePM===1?'instance':'instances'})</div>
+<table><thead><tr><th style="width:140px">Date</th><th style="width:90px">Time In (PM)</th><th>Late By</th></tr></thead>
+<tbody>${v.latePM.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.timeIn||'—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>`:''}
+${v.missedLogs.length>0?`
+<div class="section">Missing Biometric Logs (${summary.totalMissedLogs} ${summary.totalMissedLogs===1?'instance':'instances'})</div>
+<table><thead><tr><th>Date</th><th>AM In</th><th>AM Out</th><th>PM In</th><th>PM Out</th><th>Missing Slots</th></tr></thead>
+<tbody>${v.missedLogs.map(missRow).join('')}</tbody></table>`:''}
+${v.undertime?.length>0?`
+<div class="section">Undertime (${summary.totalUndertime} ${summary.totalUndertime===1?'instance':'instances'})</div>
+<table><thead><tr><th style="width:140px">Date</th><th style="width:90px">Time Out</th><th>Undertime By</th></tr></thead>
+<tbody>${v.undertime.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.timeOut||'—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>`:''}
+<div class="action-box"><b>Action Required:</b><br/><span style="white-space:pre-line">${content.actionRequired}</span></div>
+<p>${content.closing}</p>
+<table class="sig-table"><tr>
+  <td><div style="font-size:8.5pt;color:#475569">Prepared by:</div><div class="sig-line"></div><b style="font-size:9.5pt">${content.preparedBy}</b><br/><span style="font-size:8.5pt;color:#475569">${content.position}</span></td>
+  <td><div style="font-size:8.5pt;color:#475569">Acknowledged by:</div><div class="sig-line"></div><b style="font-size:9.5pt">${employee.name}</b><br/><span style="font-size:8.5pt;color:#475569">Employee &nbsp;&nbsp; Date: ___________________</span></td>
+</tr></table>
+</body></html>`;
+
+        const blob = new Blob(['\ufeff', html], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href = url;
+        a.download = `Violation_Letter_${employee.code}_${new Date().toISOString().slice(0,10)}.docx`;
+        a.click();
+        URL.revokeObjectURL(url);
+        setTimeout(() => setDownloading(false), 500);
     };
 
     if (!isOpen) return null;
@@ -353,12 +462,33 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
                             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-40">
                             Reset to Default
                         </button>
+                        {/* Format selector */}
+                        <select
+                            value={exportFormat}
+                            onChange={e => setExportFormat(e.target.value)}
+                            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none"
+                        >
+                            <option value="pdf">PDF</option>
+                            <option value="word">Word (.doc)</option>
+                        </select>
+                        {/* Paper size — only for PDF */}
+                        {exportFormat === 'pdf' && (
+                            <select
+                                value={paperSize}
+                                onChange={e => setPaperSize(e.target.value)}
+                                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none"
+                            >
+                                <option value="A4">A4</option>
+                                <option value="legal">Legal (8.5×13")</option>
+                                <option value="letter">Letter (8.5×11")</option>
+                            </select>
+                        )}
                         <button onClick={handleDownload} disabled={downloading || loading || !!error}
                             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-1.5 text-xs font-medium text-white shadow-sm transition hover:bg-primary/90 disabled:opacity-50">
                             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            {downloading ? 'Generating…' : 'Download PDF'}
+                            {downloading ? 'Generating…' : exportFormat === 'word' ? 'Download Word' : 'Download PDF'}
                         </button>
                         <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100">
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

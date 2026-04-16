@@ -152,8 +152,10 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
                     font-size: 12px; color: #475569; cursor: pointer;
                 }
 
+                .report-spacer { height: 72px; }
+
                 .report-wrap {
-                    max-width: 900px; margin: 72px auto 40px;
+                    max-width: 900px; margin: 0 auto 40px;
                     background: white; padding: 24px;
                     box-shadow: 0 1px 4px rgba(0,0,0,.1);
                 }
@@ -248,9 +250,13 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
                         size: A4 portrait;
                         margin: 1cm 1.2cm;
                     }
+                    @page :first {
+                        margin: 1cm 1.2cm;
+                    }
 
-                    body { background: white !important; }
+                    html, body { background: white !important; margin: 0; padding: 0; }
                     .toolbar { display: none !important; }
+                    .report-spacer { display: none !important; }
 
                     .report-wrap {
                         max-width: none; margin: 0; padding: 0;
@@ -339,6 +345,7 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
             </div>
 
             {/* Report */}
+            <div className="report-spacer" />
             <div className={`report-wrap ${onePerPage ? 'one-per-page' : ''}`}>
                 <div className="report-title">
                     Attendance Report

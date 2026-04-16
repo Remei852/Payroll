@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>Notice of Attendance Violations</title>
     <style>
-        @page { size: A4; margin: 0; }
+        @page { size: auto; margin: 15mm 18mm; }
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
@@ -13,7 +13,6 @@
             line-height: 1.5;
             color: #1e293b;
             background: white;
-            padding: 15mm 18mm 15mm 18mm;
         }
 
         /* ── Company header ── */
@@ -154,7 +153,7 @@
             <div class="info-row"><div class="info-label">Period Covered:</div><div class="info-value">{{ $dateRange['startFormatted'] }} to {{ $dateRange['endFormatted'] }}</div></div>
             <div class="info-row"><div class="info-label">Date Issued:</div><div class="info-value">{{ $currentDate }}</div></div>
             @if(!empty($content['referenceNo']))
-            <div class="info-row"><div class="info-label">Reference No.:</div><div class="info-value">{{ $content['referenceNo'] }}</div></div>
+          <!--   <div class="info-row"><div class="info-label">Reference No.:</div><div class="info-value">{{ $content['referenceNo'] }}</div></div>-->
             @endif
         </div>
     </div>

@@ -796,6 +796,8 @@ export default function AttendanceRecords() {
     const [generatedPeriodId, setGeneratedPeriodId] = useState(null);
 
     const [showBulkSundayModal, setShowBulkSundayModal] = useState(false);
+    const [bulkPrintFormat, setBulkPrintFormat] = useState('pdf');
+    const [bulkPaperSize, setBulkPaperSize]     = useState('A4');
 
     function selectFile(file) {
         setActiveFile(file);
@@ -1250,50 +1252,135 @@ export default function AttendanceRecords() {
                                 )}
                             </div>
                                 <div className="flex items-center gap-3">
-                                {/* Print Letters — operates on the current filtered list */}
+                                {/* Export to Excel */}
                                 {reviewList.length > 0 && (
                                     <button
                                         onClick={() => {
-                                            const empIds = reviewList.map(e => e.employee_id);
-                                            const form = document.createElement('form');
-                                            form.method = 'POST';
-                                            form.action = route('admin.violations.download-letters-bulk');
-                                            form.target = '_blank';
-                                            const csrf = document.createElement('input');
-                                            csrf.type = 'hidden'; csrf.name = '_token';
-                                            csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
-                                            form.appendChild(csrf);
-                                            empIds.forEach(id => {
-                                                const inp = document.createElement('input');
-                                                inp.type = 'hidden'; inp.name = 'employee_ids[]'; inp.value = id;
-                                                form.appendChild(inp);
+                                            const dateLabel = activeFile?.date_from && activeFile?.date_to
+                                                ? `${activeFile.date_from}_${activeFile.date_to}`
+                                                : new Date().toISOString().slice(0, 10);
+
+                                            // Sort by department then employee name alphabetically
+                                            const sorted = [...reviewList].sort((a, b) => {
+                                                const deptCmp = (a.department ?? '').localeCompare(b.department ?? '');
+                                                if (deptCmp !== 0) return deptCmp;
+                                                return (a.employee_name ?? '').localeCompare(b.employee_name ?? '');
                                             });
-                                            if (activeFile?.date_from) {
-                                                const df = document.createElement('input');
-                                                df.type = 'hidden'; df.name = 'dateFrom'; df.value = activeFile.date_from;
-                                                form.appendChild(df);
-                                            }
-                                            if (activeFile?.date_to) {
-                                                const dt = document.createElement('input');
-                                                dt.type = 'hidden'; dt.name = 'dateTo'; dt.value = activeFile.date_to;
-                                                form.appendChild(dt);
-                                            }
-                                            // preview=1 → streams inline in the new tab so HR can review before saving
-                                            const pv = document.createElement('input');
-                                            pv.type = 'hidden'; pv.name = 'preview'; pv.value = '1';
-                                            form.appendChild(pv);
-                                            document.body.appendChild(form);
-                                            form.submit();
-                                            document.body.removeChild(form);
+
+                                            const headers = ['Department', 'Employee Name', 'Employee Code', 'Days Worked', 'Absences', 'Late (HH:MM)', 'Undertime (HH:MM)', 'Overtime (HH:MM)', 'Missing Logs'];
+                                            const rows = sorted.map(emp => [
+                                                emp.department,
+                                                emp.employee_name,
+                                                emp.employee_code,
+                                                emp.total_workdays,
+                                                emp.total_absences,
+                                                fmtTime(emp.total_late_minutes),
+                                                fmtTime(emp.total_undertime_minutes),
+                                                fmtTime(emp.total_overtime_minutes),
+                                                emp.total_missed_logs,
+                                            ]);
+
+                                            const csv = [headers, ...rows]
+                                                .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
+                                                .join('\r\n');
+
+                                            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+                                            const url  = URL.createObjectURL(blob);
+                                            const a    = document.createElement('a');
+                                            a.href = url;
+                                            a.download = `Attendance_Summary_${dateLabel}.csv`;
+                                            a.click();
+                                            URL.revokeObjectURL(url);
                                         }}
-                                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50"
-                                        title={`Preview violation letters for ${reviewList.length} filtered employee${reviewList.length !== 1 ? 's' : ''}`}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-green-500 hover:text-green-700 hover:bg-green-50"
+                                        title="Export summary to Excel"
                                     >
                                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                                         </svg>
-                                        Print ({reviewList.length})
+                                        Export Excel
                                     </button>
+                                )}
+                                {/* Print Letters — operates on the current filtered list */}
+                                {reviewList.length > 0 && (
+                                    <div className="flex items-center gap-1.5">
+                                        <select
+                                            value={bulkPrintFormat}
+                                            onChange={e => setBulkPrintFormat(e.target.value)}
+                                            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:border-[#1E3A8A]"
+                                        >
+                                            <option value="pdf">PDF</option>
+                                            <option value="word">Word (.doc)</option>
+                                        </select>
+                                        {bulkPrintFormat === 'pdf' && (
+                                            <select
+                                                value={bulkPaperSize}
+                                                onChange={e => setBulkPaperSize(e.target.value)}
+                                                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:border-[#1E3A8A]"
+                                            >
+                                                <option value="A4">A4</option>
+                                                <option value="legal">Legal (8.5×13")</option>
+                                                <option value="letter">Letter (8.5×11")</option>
+                                            </select>
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                const empIds = reviewList.map(e => e.employee_id);
+
+                                                if (bulkPrintFormat === 'word') {
+                                                    // Word: fetch data for each employee then generate client-side
+                                                    // For bulk, open PDF in new tab with word hint — server handles it
+                                                    // We reuse the PDF endpoint but trigger as download
+                                                }
+
+                                                const form = document.createElement('form');
+                                                form.method = 'POST';
+                                                form.action = route('admin.violations.download-letters-bulk');
+                                                form.target = '_blank';
+                                                const csrf = document.createElement('input');
+                                                csrf.type = 'hidden'; csrf.name = '_token';
+                                                csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+                                                form.appendChild(csrf);
+                                                empIds.forEach(id => {
+                                                    const inp = document.createElement('input');
+                                                    inp.type = 'hidden'; inp.name = 'employee_ids[]'; inp.value = id;
+                                                    form.appendChild(inp);
+                                                });
+                                                if (activeFile?.date_from) {
+                                                    const df = document.createElement('input');
+                                                    df.type = 'hidden'; df.name = 'dateFrom'; df.value = activeFile.date_from;
+                                                    form.appendChild(df);
+                                                }
+                                                if (activeFile?.date_to) {
+                                                    const dt = document.createElement('input');
+                                                    dt.type = 'hidden'; dt.name = 'dateTo'; dt.value = activeFile.date_to;
+                                                    form.appendChild(dt);
+                                                }
+                                                if (bulkPrintFormat === 'pdf') {
+                                                    const pv = document.createElement('input');
+                                                    pv.type = 'hidden'; pv.name = 'preview'; pv.value = '1';
+                                                    form.appendChild(pv);
+                                                    const ps = document.createElement('input');
+                                                    ps.type = 'hidden'; ps.name = 'paper_size'; ps.value = bulkPaperSize;
+                                                    form.appendChild(ps);
+                                                } else {
+                                                    const fmt = document.createElement('input');
+                                                    fmt.type = 'hidden'; fmt.name = 'format'; fmt.value = 'word';
+                                                    form.appendChild(fmt);
+                                                }
+                                                document.body.appendChild(form);
+                                                form.submit();
+                                                document.body.removeChild(form);
+                                            }}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50"
+                                            title={`${bulkPrintFormat === 'word' ? 'Download Word' : 'Preview PDF'} violation letters for ${reviewList.length} filtered employee${reviewList.length !== 1 ? 's' : ''}`}
+                                        >
+                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            {bulkPrintFormat === 'word' ? 'Download Word' : `Print (${reviewList.length})`}
+                                        </button>
+                                    </div>
                                 )}
                             </div>
                         </div>
