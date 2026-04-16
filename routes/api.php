@@ -55,6 +55,20 @@ Route::middleware(['web', 'auth', 'verified'])->group(function () {
     
     Route::get('attendance/records/{recordId}/changes', [AttendanceController::class, 'getChangeHistory'])
         ->name('api.attendance.records.changes');
+
+    // Raw attendance logs for a specific employee + date
+    Route::get('attendance/logs/raw', [AttendanceController::class, 'getRawLogsForDate'])
+        ->name('api.attendance.logs.raw');
+
+    // Sunday work authorization
+    Route::post('attendance/records/{record}/authorize-sunday', [\App\Http\Controllers\SundayAuthorizationController::class, 'authorizeSingle'])
+        ->name('api.attendance.records.authorize-sunday');
+
+    Route::post('attendance/employees/{employee}/authorize-sundays', [\App\Http\Controllers\SundayAuthorizationController::class, 'authorizeForEmployee'])
+        ->name('api.attendance.employees.authorize-sundays');
+
+    Route::post('attendance/authorize-sundays', [\App\Http\Controllers\SundayAuthorizationController::class, 'authorizeBulk'])
+        ->name('api.attendance.authorize-sundays');
     
     Route::post('attendance/validate-for-payroll', [AttendanceController::class, 'validateForPayroll'])
         ->name('api.attendance.validate-payroll');

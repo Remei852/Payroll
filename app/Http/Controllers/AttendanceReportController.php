@@ -67,6 +67,7 @@ class AttendanceReportController extends Controller
             $totalLateDays         = 0;
             $totalUndertimeMinutes = 0;
             $totalOvertimeMinutes  = 0;
+            $totalDaysWorked       = 0.0;
 
             foreach ($empRecords as $rec) {
                 $status = $rec->status ?? '';
@@ -79,14 +80,17 @@ class AttendanceReportController extends Controller
                 $totalMissingLogs      += ($rec->missed_logs_count ?? 0);
                 $totalUndertimeMinutes += ($rec->undertime_minutes ?? 0);
                 $totalOvertimeMinutes  += ($rec->overtime_minutes ?? 0);
+                $totalDaysWorked       += (float) ($rec->rendered ?? 0);
 
                 $rows[] = [
                     'date'              => $rec->attendance_date->format('Y-m-d'),
-                    'time_in_am'        => $rec->time_in_am ? substr($rec->time_in_am, 0, 5) : null,
-                    'time_out_lunch'    => $rec->time_out_lunch ? substr($rec->time_out_lunch, 0, 5) : null,
-                    'time_in_pm'        => $rec->time_in_pm ? substr($rec->time_in_pm, 0, 5) : null,
-                    'time_out_pm'       => $rec->time_out_pm ? substr($rec->time_out_pm, 0, 5) : null,
+                    'time_in_am'        => $rec->time_in_am ?? null,
+                    'time_out_lunch'    => $rec->time_out_lunch ?? null,
+                    'time_in_pm'        => $rec->time_in_pm ?? null,
+                    'time_out_pm'       => $rec->time_out_pm ?? null,
                     'missed_logs'       => $rec->missed_logs_count ?? 0,
+                    'late_minutes_am'   => $rec->late_minutes_am ?? 0,
+                    'late_minutes_pm'   => $rec->late_minutes_pm ?? 0,
                     'late_minutes'      => $rec->total_late_minutes ?? 0,
                     'undertime_minutes' => $rec->undertime_minutes ?? 0,
                     'overtime_minutes'  => $rec->overtime_minutes ?? 0,
@@ -104,6 +108,7 @@ class AttendanceReportController extends Controller
                     'department'    => $employee->department?->name,
                 ],
                 'rows'                   => $rows,
+                'total_days_worked'      => round($totalDaysWorked, 2),
                 'total_late_minutes'     => $totalLateMinutes,
                 'total_absences'         => $totalAbsences,
                 'total_late_days'        => $totalLateDays,

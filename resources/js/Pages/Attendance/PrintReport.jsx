@@ -14,11 +14,12 @@ const fmtDateLong = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-US',
 
 const fmtTime = (t) => {
     if (!t) return '—';
-    const [h, m] = t.split(':');
-    const hour = parseInt(h, 10);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const h12  = hour % 12 || 12;
-    return `${h12}:${m}`;
+    // Return as-is in HH:MM:SS — the backend sends HH:MM or HH:MM:SS
+    const parts = t.split(':');
+    const h  = parts[0].padStart(2, '0');
+    const m  = (parts[1] ?? '00').padStart(2, '0');
+    const s  = (parts[2] ?? '00').padStart(2, '0');
+    return `${h}:${m}:${s}`;
 };
 
 const fmtMins = (min) => {
@@ -32,6 +33,7 @@ const fmtMins = (min) => {
 function EmployeeBlock({ data, dateFrom, dateTo }) {
     const {
         employee, rows,
+        total_days_worked,
         total_late_minutes, total_absences, total_late_days,
         total_missing_logs, total_undertime_minutes, total_overtime_minutes,
     } = data;
@@ -57,7 +59,9 @@ function EmployeeBlock({ data, dateFrom, dateTo }) {
                             <th className="col-time">PM In</th>
                             <th className="col-time">PM Out</th>
                             <th className="col-num">Miss</th>
-                            <th className="col-num">Late</th>
+                            <th className="col-num">Late AM</th>
+                            <th className="col-num">Late PM</th>
+                            <th className="col-num">Total Late</th>
                             <th className="col-num">UT</th>
                             <th className="col-num">OT</th>
                             <th className="col-status">Status</th>
@@ -67,18 +71,21 @@ function EmployeeBlock({ data, dateFrom, dateTo }) {
                         {rows.map((row, i) => {
                             const absent  = (row.status ?? '').toLowerCase().includes('absent') &&
                                             !(row.status ?? '').toLowerCase().includes('holiday');
-                            const late    = row.late_minutes > 0;
                             const missing = row.missed_logs > 0;
-                            const cls = absent ? 'row-absent' : late ? 'row-late' : missing ? 'row-missing' : '';
+                            const cls = absent ? 'row-absent' : missing ? 'row-missing' : '';
+                            const lateAM = row.late_minutes_am > 0;
+                            const latePM = row.late_minutes_pm > 0;
                             return (
                                 <tr key={i} className={cls}>
                                     <td className="col-date">{fmtDate(row.date)}</td>
-                                    <td className="col-time">{fmtTime(row.time_in_am)}</td>
+                                    <td className={`col-time${lateAM ? ' cell-late' : ''}`}>{fmtTime(row.time_in_am)}</td>
                                     <td className="col-time">{fmtTime(row.time_out_lunch)}</td>
-                                    <td className="col-time">{fmtTime(row.time_in_pm)}</td>
+                                    <td className={`col-time${latePM ? ' cell-late' : ''}`}>{fmtTime(row.time_in_pm)}</td>
                                     <td className="col-time">{fmtTime(row.time_out_pm)}</td>
                                     <td className="col-num">{row.missed_logs > 0 ? row.missed_logs : '—'}</td>
-                                    <td className="col-num">{fmtMins(row.late_minutes)}</td>
+                                    <td className={`col-num${lateAM ? ' cell-late' : ''}`}>{fmtMins(row.late_minutes_am)}</td>
+                                    <td className={`col-num${latePM ? ' cell-late' : ''}`}>{fmtMins(row.late_minutes_pm)}</td>
+                                    <td className={`col-num${lateAM || latePM ? ' cell-late-total' : ''}`}>{fmtMins(row.late_minutes)}</td>
                                     <td className="col-num">{fmtMins(row.undertime_minutes)}</td>
                                     <td className="col-num">{fmtMins(row.overtime_minutes)}</td>
                                     <td className="col-status">{row.status || '—'}</td>
@@ -90,12 +97,15 @@ function EmployeeBlock({ data, dateFrom, dateTo }) {
                         <tr className="summary-row">
                             <td colSpan={5} className="summary-label">TOTALS</td>
                             <td className="col-num">{total_missing_logs || '—'}</td>
+                            <td className="col-num">—</td>
+                            <td className="col-num">—</td>
                             <td className="col-num">{fmtMins(total_late_minutes)}</td>
                             <td className="col-num">{fmtMins(total_undertime_minutes)}</td>
                             <td className="col-num">{fmtMins(total_overtime_minutes)}</td>
                             <td className="col-status summary-stats">
                                 {total_absences > 0 && <span>{total_absences} absent</span>}
                                 {total_late_days > 0 && <span>{total_late_days} late days</span>}
+                                <span className="days-worked">{total_days_worked} days worked</span>
                             </td>
                         </tr>
                     </tfoot>
@@ -195,14 +205,25 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
                 .att-table tbody tr:last-child td { border-bottom: none; }
 
                 .col-date   { text-align: left;   min-width: 58px; }
-                .col-time   { text-align: center;  min-width: 52px; }
+                .col-time   { text-align: center;  min-width: 62px; }
                 .col-num    { text-align: center;  min-width: 36px; }
                 .col-status { text-align: left;    min-width: 80px; }
 
                 /* Row highlights — subtle for screen, stripped for print */
                 .row-absent  td { background: #fef2f2; }
-                .row-late    td { background: #fff7ed; }
                 .row-missing td { background: #fdf4ff; }
+
+                /* Late cell highlights — applied per-cell, not per-row */
+                .cell-late {
+                    background: #fff7ed !important;
+                    color: #c2410c !important;
+                    font-weight: 600;
+                }
+                .cell-late-total {
+                    background: #ffedd5 !important;
+                    color: #9a3412 !important;
+                    font-weight: 700;
+                }
 
                 /* Summary footer row */
                 .summary-row td {
@@ -216,6 +237,9 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
                 .summary-stats span {
                     background: #e2e8f0; border-radius: 3px;
                     padding: 1px 5px; font-size: 9px; color: #475569;
+                }
+                .summary-stats .days-worked {
+                    background: #dbeafe; color: #1e40af; font-weight: 600;
                 }
 
                 /* ── Print styles ── */
@@ -238,13 +262,18 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
                     }
 
                     /* Remove colored row backgrounds — saves ink, looks clean in B&W */
-                    .row-absent td, .row-late td, .row-missing td {
+                    .row-absent td, .row-missing td {
                         background: white !important;
+                    }
+
+                    /* Keep late cell orange in print — it's the key visual signal */
+                    .cell-late, .cell-late-total {
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
                     }
 
                     /* Mark problem rows with left border instead of background */
                     .row-absent  td:first-child { border-left: 3px solid #dc2626; }
-                    .row-late    td:first-child { border-left: 3px solid #ea580c; }
                     .row-missing td:first-child { border-left: 3px solid #a21caf; }
 
                     .employee-block {
@@ -277,8 +306,7 @@ export default function PrintReport({ reportData, dateFrom, dateTo }) {
                     .summary-stats span {
                         -webkit-print-color-adjust: exact;
                         print-color-adjust: exact;
-                    }
-                }
+                    }                }
             `}</style>
 
             {/* Toolbar */}

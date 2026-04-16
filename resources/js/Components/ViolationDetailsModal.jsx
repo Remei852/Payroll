@@ -8,7 +8,9 @@ export default function ViolationDetailsModal({
     onClose, 
     onStatusUpdate, 
     onNotesUpdate, 
-    onDismiss 
+    onDismiss,
+    filterDateFrom = '',
+    filterDateTo   = '',
 }) {
     const [notes, setNotes] = useState(violation?.notes || '');
     const [status, setStatus] = useState(violation?.status || 'Pending');
@@ -56,9 +58,27 @@ export default function ViolationDetailsModal({
         setShowDismissConfirm(false);
     };
 
-    // Handle print
-    const handlePrint = () => {
-        window.open(route('admin.violations.print', violation.id), '_blank');
+    // Build the violation letter PDF URL for this employee.
+    // Prefers the filter date range if set; falls back to the violation's calendar month.
+    const buildLetterUrl = () => {
+        const empId = violation.employee?.id;
+        if (!empId) return '#';
+
+        let from, to;
+        if (filterDateFrom && filterDateTo) {
+            from = filterDateFrom;
+            to   = filterDateTo;
+        } else {
+            // Fall back to the full month of the violation date
+            const vDate = new Date(violation.violation_date);
+            const f = new Date(vDate.getFullYear(), vDate.getMonth(), 1);
+            const t = new Date(vDate.getFullYear(), vDate.getMonth() + 1, 0);
+            from = f.toISOString().slice(0, 10);
+            to   = t.toISOString().slice(0, 10);
+        }
+
+        return route('admin.violations.download-letter', empId)
+            + `?dateFrom=${from}&dateTo=${to}`;
     };
 
     // Format metadata based on violation type
@@ -399,17 +419,25 @@ export default function ViolationDetailsModal({
                                             Dismiss Violation
                                         </button>
 
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={handlePrint}
-                                                className="inline-flex items-center gap-2 rounded-lg bg-slate-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-700"
-                                            >
-                                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                                                </svg>
-                                                Print Notice
-                                            </button>
-                                        </div>
+                                        <a
+                                            href={buildLetterUrl()}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90"
+                                            title={filterDateFrom && filterDateTo
+                                                ? `Period: ${filterDateFrom} to ${filterDateTo}`
+                                                : 'Period: full month of violation date'}
+                                        >
+                                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            Download Letter PDF
+                                            {filterDateFrom && filterDateTo && (
+                                                <span className="ml-1 rounded bg-white/20 px-1.5 py-0.5 text-xs">
+                                                    {filterDateFrom} – {filterDateTo}
+                                                </span>
+                                            )}
+                                        </a>
                                     </div>
                                 </Dialog.Panel>
                             </Transition.Child>

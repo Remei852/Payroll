@@ -40,7 +40,9 @@ class DepartmentRepository
 
     public function findAll(?int $perPage = null): Collection|LengthAwarePaginator
     {
-        $query = Department::withCount('employees')->orderBy('name');
+        $query = Department::withCount('employees')
+            ->with('workSchedule')
+            ->orderBy('name');
 
         if ($perPage) {
             return $query->paginate($perPage);

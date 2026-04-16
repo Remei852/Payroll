@@ -5,55 +5,121 @@ import React from 'react';
 import ViolationLetterModal from '@/Components/ViolationLetterModal';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-// Format an integer number of minutes as HH:MM (used for late/undertime/OT columns)
+
+/** Minutes integer → "HH:MM" (for Late AM/PM, UT, OT columns) */
 function fmtTime(min) {
-    if (!min || min === 0) return '00:00';
+    if (min === null || min === undefined || min === 0) return '00:00';
     const abs = Math.abs(Math.round(min));
     const h = Math.floor(abs / 60);
     const m = abs % 60;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
-// Format a HH:MM:SS or HH:MM time string as 12-hour time (used for clock-in/out columns)
+/** Stored "HH:MM:SS" → display "HH:MM:SS", or "—" if null/midnight */
 function fmtClock(t) {
-    if (!t) return '—';
+    if (!t || t === '00:00:00') return '—';
     const parts = t.split(':');
-    const hour = parseInt(parts[0], 10);
-    const min  = parts[1] ?? '00';
-    if (isNaN(hour)) return t;
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const h12  = hour % 12 || 12;
-    return `${h12}:${min} ${ampm}`;
+    const hh = String(parseInt(parts[0] ?? 0, 10)).padStart(2, '0');
+    const mm = String(parseInt(parts[1] ?? 0, 10)).padStart(2, '0');
+    const ss = String(parseInt(parts[2] ?? 0, 10)).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
 }
+
+/** Normalise time input → "HH:MM:SS" for API, or null if blank/midnight */
+function toApiTime(val) {
+    if (!val || val.trim() === '') return null;
+    const parts = val.split(':');
+    const hh = String(parseInt(parts[0] ?? 0, 10)).padStart(2, '0');
+    const mm = String(parseInt(parts[1] ?? 0, 10)).padStart(2, '0');
+    const ss = String(parseInt(parts[2] ?? 0, 10)).padStart(2, '0');
+    const normalised = `${hh}:${mm}:${ss}`;
+    return normalised === '00:00:00' ? null : normalised;
+}
+
+/** "YYYY-MM-DD" → short day name e.g. "Sun" */
+function dayName(dateStr) {
+    return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+/** Is this date a Sunday? */
+function isSunday(dateStr) {
+    return new Date(dateStr + 'T00:00:00').getDay() === 0;
+}
+
+/** Does the record have any edit history? (reviewed_at is set) */
+function wasAdjusted(record) {
+    return !!record.reviewed_at;
+}
+
+/** Classify a record for filtering */
+function classifyRecord(r) {
+    const s = (r.status || '').toLowerCase();
+    const flags = [];
+    if (s.includes('absent'))                          flags.push('absent');
+    if (r.missed_logs_count > 0)                       flags.push('missing');
+    if (r.total_late_minutes > 0 || s.includes('late')) flags.push('late');
+    if (r.undertime_minutes > 0 || s.includes('undertime')) flags.push('undertime');
+    if (isSunday(r.attendance_date)) {
+        if (s.includes('unauthorized'))                flags.push('sunday-unauth');
+        else if (s.includes('sunday work') || s.includes('sunday_work')) flags.push('sunday-auth');
+        else if (r.time_in_am || r.time_in_pm)         flags.push('sunday-unauth');
+    }
+    return flags;
+}
+
+/** Row background based on record state */
+function rowBg(record) {
+    const s = (record.status || '').toLowerCase();
+    if (s.includes('absent') && !s.includes('holiday')) return 'bg-red-50';
+    if (record.missed_logs_count > 0)                   return 'bg-orange-50/60';
+    if (record.total_late_minutes > 0 || record.undertime_minutes > 0) return 'bg-yellow-50/60';
+    if (s.includes('sunday work'))                      return 'bg-indigo-50/60';
+    return '';
+}
+
+/** Status badge map — ordered by priority (day type → issues → extra) */
+const STATUS_BADGE_MAP = {
+    // Day type / special condition
+    'Present - Sunday Work':            'bg-indigo-100 text-indigo-700',
+    'Sunday Work':                      'bg-indigo-100 text-indigo-700',
+    'Present - Holiday':                'bg-blue-100 text-blue-700',
+    'Present - Special Circumstances':  'bg-teal-100 text-teal-700',
+    'Present - Unauthorized Work Day':  'bg-amber-100 text-amber-700',
+    // No Work (company-declared)
+    'No Work':                          'bg-slate-100 text-slate-600',
+    // Issues
+    'Missed Log':                       'bg-pink-100 text-pink-700',
+    'Late':                             'bg-yellow-100 text-yellow-700',
+    'Undertime':                        'bg-purple-100 text-purple-700',
+    'Half Day':                         'bg-orange-100 text-orange-700',
+    'Absent':                           'bg-red-100 text-red-700',
+    'Absent - Holiday':                 'bg-slate-100 text-slate-600',
+    'Absent - Holiday Pay':             'bg-slate-100 text-slate-600',
+    'Absent - Excused':                 'bg-slate-100 text-slate-600',
+    // Clean
+    'Present':                          'bg-green-100 text-green-700',
+};
 
 function getStatusBadges(status) {
     if (!status) return null;
-    const map = {
-        'Present': 'bg-green-100 text-green-700',
-        'Late': 'bg-yellow-100 text-yellow-700',
-        'Absent': 'bg-red-100 text-red-700',
-        'Half Day': 'bg-orange-100 text-orange-700',
-        'Undertime': 'bg-purple-100 text-purple-700',
-        'Missed Log': 'bg-pink-100 text-pink-700',
-        'Present - Holiday': 'bg-blue-100 text-blue-700',
-        'Absent - Holiday': 'bg-slate-100 text-slate-700',
-        'Absent - Holiday Pay': 'bg-slate-100 text-slate-700',
-        'Absent - Excused': 'bg-slate-100 text-slate-700',
-        'Present - Special Circumstances': 'bg-teal-100 text-teal-700',
-        'Present - Sunday Work': 'bg-indigo-100 text-indigo-700',
-        'Sunday Work': 'bg-indigo-100 text-indigo-700',
-        'Present - Unauthorized Work Day': 'bg-amber-100 text-amber-700',
-    };
-    return status.split(',').map(s => s.trim()).map((s, i) => (
-        <span key={i} className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${map[s] || 'bg-slate-100 text-slate-600'}`}>{s}</span>
+    // Sort tokens: day-type first, then issues, then present
+    const ORDER = [
+        'Sunday Work','Present - Sunday Work','Present - Holiday','Present - Special Circumstances',
+        'Present - Unauthorized Work Day','Missed Log','Late','Undertime','Half Day',
+        'Absent','Absent - Holiday','Absent - Holiday Pay','Absent - Excused','Present',
+    ];
+    const tokens = status.split(',').map(s => s.trim());
+    tokens.sort((a, b) => {
+        const ai = ORDER.indexOf(a), bi = ORDER.indexOf(b);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+    return tokens.map((s, i) => (
+        <span key={i} className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE_MAP[s] || 'bg-slate-100 text-slate-600'}`}>{s}</span>
     ));
 }
 
 function getDetailRowBg(record) {
-    const s = (record.status || '').toLowerCase();
-    if (record.missed_logs_count > 0 || s.includes('missed log')) return 'bg-red-50';
-    if (s.includes('late') || record.total_late_minutes > 0) return 'bg-orange-50';
-    return 'hover:bg-slate-50';
+    return rowBg(record);
 }
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
@@ -91,118 +157,389 @@ function StepIndicator({ currentStep }) {
     );
 }
 
+// ─── Sunday Authorize Modal (row-level + bulk per-employee) ──────────────────
+function SundayAuthorizeModal({ records, employeeId, onClose, onAuthorized, isBulkMainPage = false }) {
+    // records: array of record objects to authorize (1 = single, many = bulk)
+    const isBulk = records.length > 1 || isBulkMainPage;
+    const [reason, setReason] = useState('');
+    const [useCustomHours, setUseCustomHours] = useState(false);
+    const [openingTime, setOpeningTime] = useState('08:00');
+    const [closingTime, setClosingTime] = useState('17:00');
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+
+    async function handleSubmit(e) {
+        e.preventDefault();
+        if (!reason.trim()) { setError('Reason is required.'); return; }
+        setSaving(true);
+        setError(null);
+
+        const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-CSRF-TOKEN': csrf,
+        };
+        const body = {
+            reason: reason.trim(),
+            opening_time: useCustomHours ? openingTime : null,
+            closing_time: useCustomHours ? closingTime : null,
+        };
+
+        try {
+            let res, data;
+            if (isBulkMainPage) {
+                // Main-page bulk endpoint — no specific employee
+                res = await fetch(route('api.attendance.authorize-sundays'), {
+                    method: 'POST', headers,
+                    body: JSON.stringify({
+                        ...body,
+                        employee_ids: [...new Set(records.map(r => Number(r.employee_id)))].filter(n => Number.isInteger(n) && n > 0),
+                    }),
+                });
+            } else if (isBulk) {
+                // Bulk per-employee endpoint
+                res = await fetch(route('api.attendance.employees.authorize-sundays', employeeId), {
+                    method: 'POST', headers, body: JSON.stringify(body),
+                });
+            } else {
+                // Single record endpoint
+                res = await fetch(route('api.attendance.records.authorize-sunday', records[0].id), {
+                    method: 'POST', headers, body: JSON.stringify(body),
+                });
+            }
+            data = await res.json();
+            if (!res.ok) throw new Error(data.error || data.message || 'Authorization failed');
+            onAuthorized(data);
+            onClose();
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    const dateLabels = records.map(r =>
+        new Date(r.attendance_date + 'T00:00:00').toLocaleDateString('en-US', {
+            weekday: 'short', month: 'short', day: 'numeric',
+        })
+    );
+
+    return (
+        <>
+            <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm" onClick={onClose} />
+            <div className="fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white shadow-2xl">
+                <div className="flex items-start gap-3 border-b border-slate-200 px-6 py-4">
+                    <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100">
+                        <svg className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 className="text-sm font-semibold text-slate-900">
+                            {isBulk ? `Authorize ${records.length} Sunday Records` : 'Authorize Sunday Work'}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                            {isBulk
+                                ? `${records.length} Sunday records will be authorized`
+                                : dateLabels[0]}
+                        </p>
+                    </div>
+                </div>
+
+                <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+                    {/* Affected dates (bulk) */}
+                    {isBulk && (
+                        <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 mb-1.5">Affected Dates</p>
+                            <div className="flex flex-wrap gap-1">
+                                {dateLabels.map((d, i) => (
+                                    <span key={i} className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{d}</span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* What this does */}
+                    <p className="text-xs text-slate-600">
+                        A <strong>Sunday Work</strong> schedule override will be created. Attendance will be recomputed — late, undertime, and overtime will apply against the regular schedule.
+                    </p>
+
+                    {/* Reason */}
+                    <div>
+                        <label htmlFor="sunday-auth-reason" className="mb-1 block text-xs font-semibold text-slate-700">
+                            Reason <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                            id="sunday-auth-reason"
+                            name="sunday_auth_reason"
+                            rows={2}
+                            required
+                            placeholder="e.g. Project deadline, client requirement…"
+                            value={reason}
+                            onChange={e => setReason(e.target.value)}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-200 resize-none"
+                        />
+                    </div>
+
+                    {/* Custom hours toggle */}
+                    <div>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" checked={useCustomHours} onChange={e => setUseCustomHours(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600" />
+                            <span className="text-xs font-medium text-slate-700">Use custom hours (optional)</span>
+                        </label>
+                        <p className="mt-0.5 ml-5 text-[10px] text-slate-400">Leave unchecked to use the department's default schedule</p>
+                    </div>
+
+                    {useCustomHours && (
+                        <div className="grid grid-cols-2 gap-3 ml-5">
+                            <div>
+                                <label htmlFor="sunday-auth-start" className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wide">Start Time</label>
+                                <input id="sunday-auth-start" name="opening_time" type="time" value={openingTime} onChange={e => setOpeningTime(e.target.value)}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none" />
+                            </div>
+                            <div>
+                                <label htmlFor="sunday-auth-end" className="mb-1 block text-[10px] font-medium text-slate-500 uppercase tracking-wide">End Time</label>
+                                <input id="sunday-auth-end" name="closing_time" type="time" value={closingTime} onChange={e => setClosingTime(e.target.value)}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:border-indigo-500 focus:outline-none" />
+                            </div>
+                        </div>
+                    )}
+
+                    {error && <p className="text-xs text-red-600">{error}</p>}
+
+                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                        <button type="button" onClick={onClose}
+                            className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
+                            Cancel
+                        </button>
+                        <button type="submit" disabled={saving}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition">
+                            {saving
+                                ? <><svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Authorizing…</>
+                                : <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>Authorize</>}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </>
+    );
+}
+
 // ─── Inline record edit row ───────────────────────────────────────────────────
-function EditableRecordRow({ record, onSave, onViewHistory, historyOpen }) {
+function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, historyOpen, onAuthorizeSunday }) {
     const [editing, setEditing] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [rawLogs, setRawLogs] = useState(null);
+    const [loadingLogs, setLoadingLogs] = useState(false);
     const [form, setForm] = useState({
-        time_in_am: record.time_in_am?.slice(0, 5) || '',
-        time_out_lunch: record.time_out_lunch?.slice(0, 5) || '',
-        time_in_pm: record.time_in_pm?.slice(0, 5) || '',
-        time_out_pm: record.time_out_pm?.slice(0, 5) || '',
-        status: record.status || '',
-        notes: record.notes || '',
-        reason: '',
+        time_in_am:        record.time_in_am     || '',
+        time_out_lunch:    record.time_out_lunch  || '',
+        time_in_pm:        record.time_in_pm      || '',
+        time_out_pm:       record.time_out_pm     || '',
+        notes:             record.notes           || '',
+        adjustment_reason: '',
     });
     const [error, setError] = useState(null);
 
+    function resetForm() {
+        setForm({
+            time_in_am:        record.time_in_am     || '',
+            time_out_lunch:    record.time_out_lunch  || '',
+            time_in_pm:        record.time_in_pm      || '',
+            time_out_pm:       record.time_out_pm     || '',
+            notes:             record.notes           || '',
+            adjustment_reason: '',
+        });
+        setError(null);
+    }
+
     async function handleSave() {
+        if (!form.adjustment_reason.trim()) {
+            setError('Adjustment reason is required.');
+            return;
+        }
         setSaving(true);
         setError(null);
         try {
+            const payload = {
+                time_in_am:        toApiTime(form.time_in_am),
+                time_out_lunch:    toApiTime(form.time_out_lunch),
+                time_in_pm:        toApiTime(form.time_in_pm),
+                time_out_pm:       toApiTime(form.time_out_pm),
+                notes:             form.notes || null,
+                adjustment_reason: form.adjustment_reason.trim(),
+            };
             const res = await fetch(route('api.attendance.records.update', record.id), {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
-                body: JSON.stringify(form),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                },
+                body: JSON.stringify(payload),
             });
             const data = await res.json();
-            if (data.success) { setEditing(false); onSave(record.id, form); }
-            else setError(data.error || 'Failed to save');
-        } catch { setError('Network error'); }
-        finally { setSaving(false); }
+            if (data.success) {
+                setEditing(false);
+                // Pass back the full fresh record so the row re-renders with recalculated values
+                onSave(record.id, data.record ?? payload);
+            } else {
+                setError(data.error || 'Failed to save');
+            }
+        } catch {
+            setError('Network error');
+        } finally {
+            setSaving(false);
+        }
     }
 
-    const ti = (field) => (
-        <input type="time" value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-            className="w-[4.5rem] rounded border border-slate-300 px-1 py-0.5 text-xs focus:border-[#1E3A8A] focus:outline-none" />
+    // Time input: accepts HH:MM:SS, shows placeholder when empty
+    const timeInput = (field, label) => (
+        <div className="flex flex-col gap-0.5">
+            <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">{label}</label>
+            <input
+                type="text"
+                inputMode="numeric"
+                placeholder="HH:MM:SS"
+                value={form[field]}
+                onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+                className="w-24 rounded border border-slate-300 px-2 py-1 text-xs font-mono focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]/20"
+            />
+        </div>
     );
 
     if (editing) {
         return (
-            <tr className="bg-blue-50 text-xs border-b border-blue-100">
-                <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">
-                    {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </td>
-                <td className="px-2 py-2">{ti('time_in_am')}</td>
-                <td className="px-2 py-2">{ti('time_out_lunch')}</td>
-                <td className="px-2 py-2">{ti('time_in_pm')}</td>
-                <td className="px-2 py-2">{ti('time_out_pm')}</td>
-                <td className="px-2 py-2" colSpan={6}>
-                    <div className="flex items-center gap-2">
-                        <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
-                            className="rounded border border-slate-300 px-1 py-0.5 text-xs focus:border-[#1E3A8A] focus:outline-none">
-                            {['Present','Late','Absent','Half Day','Undertime','Missed Log','Present - Holiday','Absent - Holiday','Present - Sunday Work'].map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
-                        <input type="text" placeholder="Reason for edit…" value={form.reason}
-                            onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                            className="flex-1 rounded border border-slate-300 px-1 py-0.5 text-xs focus:border-[#1E3A8A] focus:outline-none" />
-                        {error && <p className="text-red-600 text-xs">{error}</p>}
-                    </div>
-                </td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                    <div className="flex items-center gap-1.5">
-                        <button onClick={handleSave} disabled={saving}
-                            className="inline-flex items-center gap-1 rounded-md bg-[#1E3A8A] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1E3A8A]/90 disabled:opacity-50 transition">
-                            {saving
-                                ? <><svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>Saving</>
-                                : <>
-                                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
-                                    Save
-                                </>}
-                        </button>
-                        <button onClick={() => { setEditing(false); setError(null); }}
-                            className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition">
-                            Cancel
-                        </button>
-                    </div>
-                </td>
-            </tr>
+            <>
+                <tr className="bg-blue-50 text-xs border-b border-blue-100">
+                    <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">
+                        {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </td>
+                    {/* Time inputs */}
+                    <td className="px-2 py-2">{timeInput('time_in_am', 'In AM')}</td>
+                    <td className="px-2 py-2">{timeInput('time_out_lunch', 'Out Lunch')}</td>
+                    <td className="px-2 py-2">{timeInput('time_in_pm', 'In PM')}</td>
+                    <td className="px-2 py-2">{timeInput('time_out_pm', 'Out PM')}</td>
+                    {/* Computed columns — read-only while editing */}
+                    <td className="px-2 py-2 text-center text-slate-400 text-xs italic" colSpan={7}>
+                        Recalculated on save
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                            <button onClick={handleSave} disabled={saving}
+                                className="inline-flex items-center gap-1 rounded-md bg-[#1E3A8A] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1E3A8A]/90 disabled:opacity-50 transition">
+                                {saving
+                                    ? <><svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>Saving</>
+                                    : <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>Save</>}
+                            </button>
+                            <button onClick={() => { setEditing(false); resetForm(); }}
+                                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition">
+                                Cancel
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                {/* Reason row */}
+                <tr className="bg-blue-50 border-b border-blue-200">
+                    <td colSpan={14} className="px-3 pb-3 pt-0">
+                        <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                                Adjustment Reason <span className="text-red-500">*</span>
+                            </label>
+                            <textarea
+                                rows={2}
+                                required
+                                placeholder="Describe why this record is being corrected…"
+                                value={form.adjustment_reason}
+                                onChange={e => setForm(f => ({ ...f, adjustment_reason: e.target.value }))}
+                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]/20 resize-none"
+                            />
+                            {error && <p className="text-xs text-red-600">{error}</p>}
+                        </div>
+                    </td>
+                </tr>
+                {/* Raw logs panel */}
+                <tr className="bg-slate-50 border-b border-blue-200">
+                    <td colSpan={14} className="px-3 pb-3 pt-1">
+                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                            Raw Biometric Logs — {record.attendance_date}
+                        </div>
+                        {loadingLogs ? (
+                            <p className="text-xs text-slate-400">Loading logs…</p>
+                        ) : !rawLogs || rawLogs.length === 0 ? (
+                            <p className="text-xs text-slate-400 italic">No raw logs found for this date.</p>
+                        ) : (
+                            <div className="flex flex-wrap gap-1.5">
+                                {rawLogs.map((log, i) => (
+                                    <span key={i} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-mono font-semibold ${
+                                        log.type === 'IN'
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-orange-100 text-orange-800'
+                                    }`}>
+                                        <span className="text-[9px] font-bold opacity-60">{log.type}</span>
+                                        {log.time}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </td>
+                </tr>
+            </>
         );
     }
 
+    const s = (record.status || '').toLowerCase();
+    const isMissing   = record.missed_logs_count > 0;
+    const isSun       = isSunday(record.attendance_date);
+    const isSundayAuth= s.includes('sunday work');
+    const hasLogs     = !!(record.time_in_am || record.time_in_pm);
+    const adjusted    = wasAdjusted(record);
+    const day         = dayName(record.attendance_date);
+
     return (
-        <tr className={`${getDetailRowBg(record)} text-xs transition-colors`}>
+        <tr className={`${rowBg(record)} text-xs transition-colors hover:brightness-95`}>
+            <td className="whitespace-nowrap px-3 py-2 text-center">
+                <span className={`text-[10px] font-bold ${isSun ? 'text-indigo-500' : 'text-slate-400'}`}>{day}</span>
+            </td>
             <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-900">
-                {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                <span className="flex items-center gap-1">
+                    {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    {adjusted && (
+                        <span title="Adjusted by HR" className="text-slate-400 cursor-help">
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </span>
+                    )}
+                </span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
                 <span className={record.late_minutes_am > 0 ? 'font-semibold text-orange-600' : 'text-slate-700'}>{fmtClock(record.time_in_am)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
-                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-blue-500'}>{fmtClock(record.time_out_lunch)}</span>
+                <span className="text-slate-500">{fmtClock(record.time_out_lunch)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
                 <span className={record.late_minutes_pm > 0 ? 'font-semibold text-orange-600' : 'text-slate-700'}>{fmtClock(record.time_in_pm)}</span>
             </td>
             <td className="whitespace-nowrap px-3 py-2">
-                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-blue-500'}>{fmtClock(record.time_out_pm)}</span>
+                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-slate-500'}>{fmtClock(record.time_out_pm)}</span>
             </td>
-            <td className="whitespace-nowrap px-3 py-2 text-center">
-                <span className={record.late_minutes_am > 0 ? 'font-semibold text-orange-600' : 'text-slate-400'}>{fmtTime(record.late_minutes_am)}</span>
+            <td className="whitespace-nowrap px-3 py-2 text-center" title="Late AM minutes">
+                <span className={record.late_minutes_am > 0 ? 'font-semibold text-orange-600' : 'text-slate-300'}>{fmtTime(record.late_minutes_am)}</span>
             </td>
-            <td className="whitespace-nowrap px-3 py-2 text-center">
-                <span className={record.late_minutes_pm > 0 ? 'font-semibold text-orange-600' : 'text-slate-400'}>{fmtTime(record.late_minutes_pm)}</span>
+            <td className="whitespace-nowrap px-3 py-2 text-center" title="Late PM minutes">
+                <span className={record.late_minutes_pm > 0 ? 'font-semibold text-orange-600' : 'text-slate-300'}>{fmtTime(record.late_minutes_pm)}</span>
             </td>
-            <td className="whitespace-nowrap px-3 py-2 text-center">
-                <span className={record.total_late_minutes > 0 ? 'font-semibold text-orange-600' : 'text-slate-400'}>{fmtTime(record.total_late_minutes)}</span>
+            <td className="whitespace-nowrap px-3 py-2 text-center" title="Total late minutes">
+                <span className={record.total_late_minutes > 0 ? 'font-semibold text-orange-600' : 'text-slate-300'}>{fmtTime(record.total_late_minutes)}</span>
             </td>
-            <td className="whitespace-nowrap px-3 py-2 text-center">
-                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-slate-400'}>{fmtTime(record.undertime_minutes)}</span>
+            <td className="whitespace-nowrap px-3 py-2 text-center" title="Undertime minutes">
+                <span className={record.undertime_minutes > 0 ? 'font-semibold text-purple-600' : 'text-slate-300'}>{fmtTime(record.undertime_minutes)}</span>
             </td>
-            <td className="whitespace-nowrap px-3 py-2 text-center text-slate-600">{fmtTime(record.overtime_minutes)}</td>
-            <td className="whitespace-nowrap px-3 py-2 text-center">
+            <td className="whitespace-nowrap px-3 py-2 text-center" title="Overtime minutes">
+                <span className={record.overtime_minutes > 0 ? 'font-semibold text-green-600' : 'text-slate-300'}>{fmtTime(record.overtime_minutes)}</span>
+            </td>
+            <td className="whitespace-nowrap px-3 py-2 text-center" title="Number of missing attendance logs">
                 <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${record.missed_logs_count > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                     {record.missed_logs_count}
                 </span>
@@ -210,12 +547,38 @@ function EditableRecordRow({ record, onSave, onViewHistory, historyOpen }) {
             <td className="px-3 py-2">
                 <div className="flex flex-wrap gap-1">{getStatusBadges(record.status)}</div>
             </td>
-            <td className="px-3 py-2">
-                <div className="flex items-center gap-1">
-                    <button onClick={() => setEditing(true)}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50 transition" title="Edit record">
+            <td className="px-3 py-2 sticky right-0 bg-inherit">
+                <div className="flex items-center gap-1 flex-wrap">
+                    {isSun && hasLogs && !isSundayAuth && (
+                        <button onClick={() => onAuthorizeSunday?.([record])}
+                            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition"
+                            title="Authorize this Sunday work">
+                            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            Authorize
+                        </button>
+                    )}
+                    {isSun && isSundayAuth && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
+                            <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/></svg>
+                            Authorized
+                        </span>
+                    )}
+                    <button onClick={() => {
+                            setEditing(true);
+                            // Fetch raw logs for this date
+                            if (employeeCode && !rawLogs) {
+                                setLoadingLogs(true);
+                                fetch(route('api.attendance.logs.raw') + `?employee_code=${encodeURIComponent(employeeCode)}&date=${record.attendance_date}`)
+                                    .then(r => r.json())
+                                    .then(d => setRawLogs(d.logs || []))
+                                    .catch(() => setRawLogs([]))
+                                    .finally(() => setLoadingLogs(false));
+                            }
+                        }}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50 transition"
+                        title={isMissing ? 'Edit logs' : 'Edit record'}>
                         <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-                        Edit
+                        {isMissing ? 'Edit Logs' : 'Edit'}
                     </button>
                     {onViewHistory && (
                         <button onClick={() => onViewHistory(record.id)}
@@ -232,15 +595,36 @@ function EditableRecordRow({ record, onSave, onViewHistory, historyOpen }) {
 
 // ─── Detail modal ─────────────────────────────────────────────────────────────
 function DetailModal({ employee, onClose, onRecordSave }) {
-    const [records, setRecords] = useState(
-        [...employee.records].sort((a, b) => new Date(a.attendance_date) - new Date(b.attendance_date))
-    );
+    const allRecords = [...employee.records].sort((a, b) => new Date(a.attendance_date) - new Date(b.attendance_date));
+    const [records, setRecords] = useState(allRecords);
     const [historyRecordId, setHistoryRecordId] = useState(null);
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
+    // authorizeTarget: { records: [], employeeId } — null = modal closed
+    const [authorizeTarget, setAuthorizeTarget] = useState(null);
+
+    // Sunday records pending authorization
+    const pendingSundays = records.filter(r => {
+        const s = (r.status || '').toLowerCase();
+        return isSunday(r.attendance_date)
+            && (r.time_in_am || r.time_in_pm)
+            && s.includes('unauthorized');
+    });
 
     function handleRecordSave(recordId, updatedFields) {
-        setRecords(prev => prev.map(r => r.id === recordId ? { ...r, ...updatedFields } : r));
+        setRecords(prev => prev.map(r => r.id !== recordId ? r : { ...r, ...updatedFields }));
+        onRecordSave?.();
+    }
+
+    function handleAuthorized(data) {
+        // data.record (single) or data.records (bulk)
+        const updated = data.records ?? (data.record ? [data.record] : []);
+        if (updated.length > 0) {
+            setRecords(prev => prev.map(r => {
+                const fresh = updated.find(u => u.id === r.id);
+                return fresh ? { ...r, ...fresh } : r;
+            }));
+        }
         onRecordSave?.();
     }
 
@@ -255,11 +639,14 @@ function DetailModal({ employee, onClose, onRecordSave }) {
         } finally { setLoadingHistory(false); }
     }
 
+    const TOTAL_COLS = 14;
+
     return (
         <>
             <div className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-            <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-7xl -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white shadow-2xl flex flex-col" style={{ maxHeight: '90vh' }}>
-                {/* Header */}
+            <div className="fixed left-1/2 top-1/2 z-50 w-full max-w-[96vw] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white shadow-2xl flex flex-col" style={{ maxHeight: '92vh' }}>
+
+                {/* 1. Employee header */}
                 <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 flex-shrink-0">
                     <div>
                         <h3 className="text-base font-semibold text-slate-900">{employee.employee_name}</h3>
@@ -269,33 +656,64 @@ function DetailModal({ employee, onClose, onRecordSave }) {
                         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
-                {/* Table */}
-                <div className="overflow-auto flex-1 p-4">
+
+                {/* 2. Sunday pending authorization strip — only shown when applicable */}
+                {pendingSundays.length > 0 && (
+                    <div className="flex-shrink-0 flex items-center justify-between border-b border-indigo-200 bg-indigo-50 px-6 py-2.5">
+                        <div className="flex items-center gap-2 text-xs text-indigo-700">
+                            <svg className="h-4 w-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                            </svg>
+                            <span>
+                                <strong>{pendingSundays.length}</strong> Sunday record{pendingSundays.length !== 1 ? 's' : ''} pending authorization
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setAuthorizeTarget({ records: pendingSundays, employeeId: employee.employee_id })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 transition">
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            Authorize All Sunday Work
+                        </button>
+                    </div>
+                )}
+
+                {/* 3. Table */}
+                <div className="overflow-auto flex-1">
                     <table className="min-w-full text-left text-sm">
-                        <thead className="bg-[#1E3A8A] text-xs uppercase text-white sticky top-0">
+                        <thead className="bg-[#1E3A8A] text-xs uppercase text-white sticky top-0 z-10">
                             <tr>
+                                <th className="px-3 py-2.5 font-medium text-center">Day</th>
                                 <th className="px-3 py-2.5 font-medium">Date</th>
                                 <th className="px-3 py-2.5 font-medium">In AM</th>
                                 <th className="px-3 py-2.5 font-medium">Out Lunch</th>
                                 <th className="px-3 py-2.5 font-medium">In PM</th>
                                 <th className="px-3 py-2.5 font-medium">Out PM</th>
-                                <th className="px-3 py-2.5 font-medium text-center">Late AM</th>
-                                <th className="px-3 py-2.5 font-medium text-center">Late PM</th>
-                                <th className="px-3 py-2.5 font-medium text-center">Total Late</th>
-                                <th className="px-3 py-2.5 font-medium text-center">UT</th>
-                                <th className="px-3 py-2.5 font-medium text-center">OT</th>
-                                <th className="px-3 py-2.5 font-medium text-center">Logs</th>
+                                <th className="px-3 py-2.5 font-medium text-center" title="Late AM minutes">Late AM</th>
+                                <th className="px-3 py-2.5 font-medium text-center" title="Late PM minutes">Late PM</th>
+                                <th className="px-3 py-2.5 font-medium text-center" title="Total late minutes">Total Late</th>
+                                <th className="px-3 py-2.5 font-medium text-center" title="Undertime minutes">UT</th>
+                                <th className="px-3 py-2.5 font-medium text-center" title="Overtime minutes">OT</th>
+                                <th className="px-3 py-2.5 font-medium text-center" title="Number of missing attendance logs">Logs</th>
                                 <th className="px-3 py-2.5 font-medium">Status</th>
-                                <th className="px-3 py-2.5 font-medium">Actions</th>
+                                <th className="px-3 py-2.5 font-medium sticky right-0 bg-[#1E3A8A]">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                             {records.map(r => (
                                 <React.Fragment key={r.id}>
-                                    <EditableRecordRow record={r} onSave={handleRecordSave} onViewHistory={viewHistory} historyOpen={historyRecordId === r.id} />
+                                    <EditableRecordRow
+                                        record={r}
+                                        employeeCode={employee.employee_code}
+                                        onSave={handleRecordSave}
+                                        onViewHistory={viewHistory}
+                                        historyOpen={historyRecordId === r.id}
+                                        onAuthorizeSunday={recs => setAuthorizeTarget({ records: recs, employeeId: employee.employee_id })}
+                                    />
                                     {historyRecordId === r.id && (
                                         <tr>
-                                            <td colSpan={13} className="bg-slate-50 px-4 py-3">
+                                            <td colSpan={TOTAL_COLS} className="bg-slate-50 px-4 py-3">
                                                 {loadingHistory ? (
                                                     <p className="text-xs text-slate-400">Loading history…</p>
                                                 ) : history.length === 0 ? (
@@ -321,14 +739,26 @@ function DetailModal({ employee, onClose, onRecordSave }) {
                         </tbody>
                     </table>
                 </div>
-                {/* Footer */}
-                <div className="border-t border-slate-200 px-6 py-3 flex justify-end flex-shrink-0">
+
+                {/* 4. Footer */}
+                <div className="border-t border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
+                    <p className="text-xs text-slate-400">{records.length} record{records.length !== 1 ? 's' : ''}</p>
                     <button onClick={onClose}
                         className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
                         Close
                     </button>
                 </div>
             </div>
+
+            {/* Sunday authorize modal */}
+            {authorizeTarget && (
+                <SundayAuthorizeModal
+                    records={authorizeTarget.records}
+                    employeeId={authorizeTarget.employeeId}
+                    onClose={() => setAuthorizeTarget(null)}
+                    onAuthorized={handleAuthorized}
+                />
+            )}
         </>
     );
 }
@@ -354,8 +784,7 @@ export default function AttendanceRecords() {
 
     const [reviewConfirmed, setReviewConfirmed] = useState(false);
     const [activeFile, setActiveFile] = useState(uploadedFiles[0] ?? null);
-    const [reviewFilter, setReviewFilter] = useState('issues');
-    const [filters, setFilters] = useState({ search: '', department: '', dateFrom: '', dateTo: '' });
+    const [filters, setFilters] = useState({ search: '', department: '', dateFrom: '', dateTo: '', status: '' });
 
     const [payrollForm, setPayrollForm] = useState({
         department_id: departments.length === 1 ? String(departments[0].id) : '',
@@ -365,6 +794,8 @@ export default function AttendanceRecords() {
     });
     const [generatingPayroll, setGeneratingPayroll] = useState(false);
     const [generatedPeriodId, setGeneratedPeriodId] = useState(null);
+
+    const [showBulkSundayModal, setShowBulkSundayModal] = useState(false);
 
     function selectFile(file) {
         setActiveFile(file);
@@ -537,7 +968,7 @@ export default function AttendanceRecords() {
         e.total_missed_logs > 0 || e.total_late_minutes > 0 || e.total_absences > 0
     );
 
-    const baseList = reviewFilter === 'issues' ? employeesWithIssues : scopedSummary;
+    const baseList = scopedSummary;
     const reviewList = baseList.filter(e => {
         if (filters.search) {
             const s = filters.search.toLowerCase();
@@ -553,6 +984,10 @@ export default function AttendanceRecords() {
             });
             if (!inRange) return false;
         }
+        if (filters.status) {
+            const hasStatus = e.records.some(r => (r.status || '').toLowerCase().includes(filters.status.toLowerCase()));
+            if (!hasStatus) return false;
+        }
         return true;
     });
 
@@ -563,7 +998,7 @@ export default function AttendanceRecords() {
     }
 
     function viewDetails(emp) { setSelectedEmployee(emp); setShowDetailModal(true); }
-    function clearFilters() { setFilters({ search: '', department: '', dateFrom: '', dateTo: '' }); }
+    function clearFilters() { setFilters({ search: '', department: '', dateFrom: '', dateTo: '', status: '' }); }
 
     // ── Spinner SVG ──────────────────────────────────────────────────────────
     const Spinner = ({ cls = 'h-4 w-4' }) => (
@@ -741,6 +1176,17 @@ export default function AttendanceRecords() {
                                 <button onClick={clearFilters} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 transition">
                                     Clear Filters
                                 </button>
+                                {/* Bulk Sunday authorization — shown when there are pending Sunday records */}
+                                {scopedSummary.some(e => e.records?.some(r => {
+                                    const s = (r.status || '').toLowerCase();
+                                    return isSunday(r.attendance_date) && (r.time_in_am || r.time_in_pm) && s.includes('unauthorized');
+                                })) && (
+                                    <button onClick={() => setShowBulkSundayModal(true)}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition">
+                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        Authorize Sunday Logs
+                                    </button>
+                                )}
                                 <button onClick={() => setReviewConfirmed(true)}
                                     className="inline-flex items-center gap-1.5 rounded-lg bg-[#1E3A8A] px-4 py-1.5 text-xs font-medium text-white hover:bg-[#1E3A8A]/90 transition shadow-sm">
                                     <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>
@@ -766,6 +1212,24 @@ export default function AttendanceRecords() {
                                 </select>
                             </div>
                             <div className="flex-1">
+                                <label className="mb-1 block text-xs font-medium text-slate-500">Status</label>
+                                <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]">
+                                    <option value="">All Statuses</option>
+                                    <option value="Present">Present</option>
+                                    <option value="Absent">Absent</option>
+                                    <option value="Late">Late</option>
+                                    <option value="Undertime">Undertime</option>
+                                    <option value="Missed Log">Missed Log</option>
+                                    <option value="Half Day">Half Day</option>
+                                    <option value="No Work">No Work</option>
+                                    <option value="Sunday Work">Sunday Work</option>
+                                    <option value="Unauthorized Work">Unauthorized Work</option>
+                                    <option value="Holiday">Holiday</option>
+                                    <option value="Holiday Work">Holiday Work</option>
+                                </select>
+                            </div>
+                            <div className="flex-1">
                                 <label className="mb-1 block text-xs font-medium text-slate-500">Date From</label>
                                 <input type="date" value={filters.dateFrom} onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
                                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
@@ -785,15 +1249,52 @@ export default function AttendanceRecords() {
                                     <span className="text-amber-600"><span className="font-medium">{employeesWithIssues.length}</span> with issues</span>
                                 )}
                             </div>
-                            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs">
-                                <button onClick={() => setReviewFilter('issues')}
-                                    className={`px-3 py-1.5 font-medium transition ${reviewFilter === 'issues' ? 'bg-amber-100 text-amber-800' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                                    Issues only ({employeesWithIssues.length})
-                                </button>
-                                <button onClick={() => setReviewFilter('all')}
-                                    className={`px-3 py-1.5 font-medium transition border-l border-slate-200 ${reviewFilter === 'all' ? 'bg-[#1E3A8A] text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                                    All ({scopedSummary.length})
-                                </button>
+                                <div className="flex items-center gap-3">
+                                {/* Print Letters — operates on the current filtered list */}
+                                {reviewList.length > 0 && (
+                                    <button
+                                        onClick={() => {
+                                            const empIds = reviewList.map(e => e.employee_id);
+                                            const form = document.createElement('form');
+                                            form.method = 'POST';
+                                            form.action = route('admin.violations.download-letters-bulk');
+                                            form.target = '_blank';
+                                            const csrf = document.createElement('input');
+                                            csrf.type = 'hidden'; csrf.name = '_token';
+                                            csrf.value = document.querySelector('meta[name="csrf-token"]')?.content || '';
+                                            form.appendChild(csrf);
+                                            empIds.forEach(id => {
+                                                const inp = document.createElement('input');
+                                                inp.type = 'hidden'; inp.name = 'employee_ids[]'; inp.value = id;
+                                                form.appendChild(inp);
+                                            });
+                                            if (activeFile?.date_from) {
+                                                const df = document.createElement('input');
+                                                df.type = 'hidden'; df.name = 'dateFrom'; df.value = activeFile.date_from;
+                                                form.appendChild(df);
+                                            }
+                                            if (activeFile?.date_to) {
+                                                const dt = document.createElement('input');
+                                                dt.type = 'hidden'; dt.name = 'dateTo'; dt.value = activeFile.date_to;
+                                                form.appendChild(dt);
+                                            }
+                                            // preview=1 → streams inline in the new tab so HR can review before saving
+                                            const pv = document.createElement('input');
+                                            pv.type = 'hidden'; pv.name = 'preview'; pv.value = '1';
+                                            form.appendChild(pv);
+                                            document.body.appendChild(form);
+                                            form.submit();
+                                            document.body.removeChild(form);
+                                        }}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50"
+                                        title={`Preview violation letters for ${reviewList.length} filtered employee${reviewList.length !== 1 ? 's' : ''}`}
+                                    >
+                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Print ({reviewList.length})
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -808,7 +1309,7 @@ export default function AttendanceRecords() {
                     {reviewList.length === 0 ? (
                         <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
                             <svg className="mx-auto h-8 w-8 text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                            <p className="text-sm text-slate-400">{reviewFilter === 'issues' ? 'No issues found — all records look clean.' : 'No employees found.'}</p>
+                            <p className="text-sm text-slate-400">No employees found.</p>
                         </div>
                     ) : (
                         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm" style={{ maxHeight: '460px', overflowY: 'auto' }}>
@@ -1036,8 +1537,36 @@ export default function AttendanceRecords() {
                 isOpen={showLetterModal}
                 onClose={() => { setShowLetterModal(false); setSelectedEmployeeForLetter(null); }}
                 employeeId={selectedEmployeeForLetter}
-                dateFilters={{}}
+                dateFilters={{
+                    dateFrom: activeFile?.date_from || filters.dateFrom || '',
+                    dateTo:   activeFile?.date_to   || filters.dateTo   || '',
+                }}
             />
+
+            {/* Bulk Sunday authorization modal — main page scope */}
+            {showBulkSundayModal && (() => {
+                // Collect eligible records, attaching employee_id from the parent summary
+                const eligibleRecords = scopedSummary.flatMap(e =>
+                    (e.records ?? [])
+                        .filter(r => {
+                            const s = (r.status || '').toLowerCase();
+                            return isSunday(r.attendance_date) && (r.time_in_am || r.time_in_pm) && s.includes('unauthorized');
+                        })
+                        .map(r => ({ ...r, employee_id: Number(e.employee_id) }))
+                );
+                return (
+                    <SundayAuthorizeModal
+                        records={eligibleRecords}
+                        employeeId={null}
+                        onClose={() => setShowBulkSundayModal(false)}
+                        onAuthorized={() => {
+                            setShowBulkSundayModal(false);
+                            router.reload({ only: ['attendanceSummary'] });
+                        }}
+                        isBulkMainPage
+                    />
+                );
+            })()}
         </AdminLayout>
     );
 }

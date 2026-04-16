@@ -198,19 +198,21 @@ class AttendanceService
         // Determine if this is a working day
         $isWorkingDay = $this->isWorkingDay($date, $schedule, $holiday, $override);
 
-        // If no logs at all, create absent record
+        // If no logs at all, determine what record to create
         if ($logs->isEmpty()) {
-            // Create absent record if:
-            // 1. It's a working day (regular absence tracking)
-            // 2. There's a "no_work" override (need to track excused absences)
-            // 3. It's a holiday (need to track holiday absences)
-            $shouldCreateRecord = $isWorkingDay || 
-                                  ($override && $override->override_type === 'no_work') ||
-                                  $holiday;
-            
-            if ($shouldCreateRecord) {
+            // No work override → always 'No Work', never 'Absent'
+            if ($override && $override->override_type === 'no_work') {
                 $this->createAbsentRecord($employee, $date, $schedule, $holiday, $override, $isWorkingDay);
+                return;
             }
+
+            // Not a working day and no holiday → skip (weekend / non-working day)
+            if (!$isWorkingDay && !$holiday) {
+                return;
+            }
+
+            // Working day or holiday with no logs → Absent
+            $this->createAbsentRecord($employee, $date, $schedule, $holiday, $override, $isWorkingDay);
             return;
         }
 
@@ -271,18 +273,25 @@ class AttendanceService
             $pairStart = $pairs[0]['in_datetime'];
             $pairEnd = $pairs[0]['out_datetime'];
             
-            $lunchStart = Carbon::parse($date->format('Y-m-d') . ' ' . self::LUNCH_BREAK_START);
-            $lunchEnd = Carbon::parse($date->format('Y-m-d') . ' ' . self::LUNCH_BREAK_END);
+            // Use schedule break times if available, fall back to constants
+            $lunchStartTime = $schedule->break_start_time ?? self::LUNCH_BREAK_START;
+            $lunchEndTime   = $schedule->break_end_time   ?? self::LUNCH_BREAK_END;
+            $lunchStart = Carbon::parse($date->format('Y-m-d') . ' ' . $lunchStartTime);
+            $lunchEnd   = Carbon::parse($date->format('Y-m-d') . ' ' . $lunchEndTime);
             
-            // If the single pair crosses lunch hours, deduct 1 hour
+            // If the single pair crosses lunch hours, deduct the break duration
             if ($pairStart->lt($lunchStart) && $pairEnd->gt($lunchEnd)) {
-                $totalWorkedMinutes -= 60; // Deduct 1 hour lunch
+                $totalWorkedMinutes -= $lunchStart->diffInMinutes($lunchEnd);
                 $lunchDeducted = true;
             }
         } elseif ($totalWorkedMinutes > 360 && !$lunchDeducted) {
             // If worked > 6 hours and lunch not deducted yet, deduct it
             // This handles the time-slot based calculation
-            $totalWorkedMinutes -= 60;
+            $lunchStartTime = $schedule->break_start_time ?? self::LUNCH_BREAK_START;
+            $lunchEndTime   = $schedule->break_end_time   ?? self::LUNCH_BREAK_END;
+            $lunchDuration  = Carbon::parse($date->format('Y-m-d') . ' ' . $lunchStartTime)
+                                    ->diffInMinutes(Carbon::parse($date->format('Y-m-d') . ' ' . $lunchEndTime));
+            $totalWorkedMinutes -= $lunchDuration;
             $lunchDeducted = true;
         }
         
@@ -331,8 +340,8 @@ class AttendanceService
         // 1.0 = full day, 0.5 = half day, 0.0 = absent
         $workdayRendered = $this->calculateWorkdayRendered($status, $totalWorkedHours, $schedule);
 
-        // If status is "Absent", reset late minutes to 0
-        $isAbsent = $status === 'Absent' || str_contains($status, 'Absent -');
+        // If status is "Absent" or "No Work", reset late minutes to 0
+        $isAbsent = $status === 'Absent' || str_contains($status, 'Absent -') || str_starts_with($status, 'No Work');
         if ($isAbsent) {
             $lateMinutesAM = 0;
             $lateMinutesPM = 0;
@@ -398,10 +407,17 @@ class AttendanceService
         // Determine status for absent employee
         $status = 'Absent';
         
-        // If there's a no_work override, mark as excused
+        // If there's a no_work override, use the override reason in the status
         if ($override && $override->override_type === 'no_work') {
-            $status = 'Absent - Excused';
+            $reason = $override->reason ? ' - ' . $override->reason : '';
+            $status = 'No Work' . $reason;
         }
+        // Holiday with no override (pure holiday absence)
+        elseif ($holiday && !$override) {
+            $status = $holiday->is_paid ? 'Absent - Holiday Pay' : 'Absent - Holiday';
+        }
+        // Holiday with override that makes it a working day → regular absent
+        // (status stays 'Absent' — employee was expected to work)
 
         // Generate remarks
         $remarks = $this->generateRemarks($status, false, false, false, 0, $holiday, $override);
@@ -750,8 +766,15 @@ class AttendanceService
                 $inferredType = 'OUT';
             }
             else {
-                // More than 4 logs - use alternating pattern
-                $inferredType = $expectedByPosition;
+                // More than 4 logs — use alternating pattern,
+                // but force the very last log to OUT if it's in the afternoon
+                // (handles clusters of accidental taps at lunch return)
+                $isLastLog = ($index === $logCount - 1);
+                if ($isLastLog && $totalMinutes >= $lunchBoundary) {
+                    $inferredType = 'OUT';
+                } else {
+                    $inferredType = $expectedByPosition;
+                }
             }
             
             $inferred[] = [
@@ -962,11 +985,21 @@ class AttendanceService
         // If it's not a working day (no work expected), handle specially
         if (!$isWorkingDay) {
             if ($override && $override->override_type === 'no_work') {
-                // No work expected (typhoon, etc.)
+                // No work expected — use the override reason in the status
+                $reason = $override->reason ? ' - ' . $override->reason : '';
                 if (empty($pairs) || $firstIn === null) {
-                    return 'Absent - Excused'; // No deduction
+                    return 'No Work' . $reason;
                 } else {
-                    return 'Present - Special Circumstances'; // Heroic effort
+                    return 'Present - Special Circumstances';
+                }
+            }
+
+            // Pure holiday (no override) — use holiday-specific statuses
+            if ($holiday) {
+                if (empty($pairs) || $firstIn === null) {
+                    return $holiday->is_paid ? 'Absent - Holiday Pay' : 'Absent - Holiday';
+                } else {
+                    return 'Present - Holiday';
                 }
             }
             
@@ -976,15 +1009,6 @@ class AttendanceService
                 return 'Absent';
             } else {
                 return 'Present - Unauthorized Work Day';
-            }
-        }
-
-        // If it's a holiday
-        if ($holiday) {
-            if (empty($pairs) || $firstIn === null) {
-                return $holiday->is_paid ? 'Absent - Holiday Pay' : 'Absent - Holiday';
-            } else {
-                return 'Present - Holiday';
             }
         }
 
@@ -999,6 +1023,9 @@ class AttendanceService
         } else {
             $isSundayWork = false;
         }
+
+        // Holiday with override — treat as working day but prefix status with "Holiday Work"
+        $isHolidayWork = $holiday && $override && $override->override_type !== 'no_work';
 
         // Regular working day logic
         // Check if person is ABSENT first (no complete IN-OUT pair or no IN log)
@@ -1044,11 +1071,13 @@ class AttendanceService
 
         // If no issues, mark as PRESENT
         if (empty($statuses)) {
+            if ($isHolidayWork) return 'Present - Holiday Work';
             return $isSundayWork ? 'Present - Sunday Work' : 'Present';
         }
 
-        // Return combined status (prefix Sunday Work if applicable)
+        // Return combined status (prefix Holiday Work or Sunday Work if applicable)
         $combined = implode(', ', $statuses);
+        if ($isHolidayWork) return 'Holiday Work, ' . $combined;
         return $isSundayWork ? 'Sunday Work, ' . $combined : $combined;
     }
 
@@ -1067,12 +1096,20 @@ class AttendanceService
         
         // Check if "absent" is one of the statuses (not just a substring)
         $isAbsent = in_array('absent', $statusParts);
+
+        // "No Work" = company-declared non-working day — no deduction, no credit
+        $isNoWork = str_starts_with($statusLower, 'no work');
         
         // Check if "half day" is one of the statuses
         $isHalfDay = in_array('half day', $statusParts);
         
         // If status is "Absent" (standalone), return 0
         if ($isAbsent) {
+            return 0.0;
+        }
+
+        // No Work day — return 0 (not counted as worked, not counted as absent)
+        if ($isNoWork) {
             return 0.0;
         }
         
@@ -1177,7 +1214,7 @@ class AttendanceService
     private function isUndertime(?string $lastOut, WorkSchedule $schedule): bool
     {
         if (!$lastOut) return false;
-        if (!($schedule->undertime_enabled ?? true)) return false;
+        if ($schedule->undertime_enabled === false) return false;
 
         $today     = Carbon::today();
         $endTime   = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
@@ -1193,7 +1230,7 @@ class AttendanceService
     private function isEarlyLunchOut(?string $lunchOut, WorkSchedule $schedule): bool
     {
         if (!$lunchOut) return false;
-        if (!($schedule->undertime_enabled ?? true)) return false;
+        if ($schedule->undertime_enabled === false) return false;
         if (!$schedule->break_start_time) return false;
 
         $today      = Carbon::today();
@@ -1210,7 +1247,7 @@ class AttendanceService
     private function calculateUndertimeMinutes(?string $lastOut, WorkSchedule $schedule): int
     {
         if (!$lastOut) return 0;
-        if (!($schedule->undertime_enabled ?? true)) return 0;
+        if ($schedule->undertime_enabled === false) return 0;
 
         $today     = Carbon::today();
         $endTime   = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
@@ -1230,7 +1267,7 @@ class AttendanceService
     private function calculateEarlyLunchOutMinutes(?string $lunchOut, WorkSchedule $schedule): int
     {
         if (!$lunchOut) return 0;
-        if (!($schedule->undertime_enabled ?? true)) return 0;
+        if ($schedule->undertime_enabled === false) return 0;
         if (!$schedule->break_start_time) return 0;
 
         $today      = Carbon::today();
@@ -1383,8 +1420,10 @@ class AttendanceService
      */
     private function getOverrideForEmployee(Employee $employee, Carbon $date): ?\App\Models\ScheduleOverride
     {
+        $dateStr = $date->format('Y-m-d');
+
         // First, check if there's an employee-specific override (many-to-many relationship)
-        $employeeOverride = \App\Models\ScheduleOverride::where('override_date', $date)
+        $employeeOverride = \App\Models\ScheduleOverride::whereDate('override_date', $dateStr)
             ->where('department_id', $employee->department_id)
             ->whereHas('employees', function($query) use ($employee) {
                 $query->where('employees.id', $employee->id);
@@ -1396,7 +1435,7 @@ class AttendanceService
         }
         
         // Second, check if there's a single employee override (employee_id field)
-        $singleEmployeeOverride = \App\Models\ScheduleOverride::where('override_date', $date)
+        $singleEmployeeOverride = \App\Models\ScheduleOverride::whereDate('override_date', $dateStr)
             ->where('department_id', $employee->department_id)
             ->where('employee_id', $employee->id)
             ->first();
@@ -1407,7 +1446,7 @@ class AttendanceService
         
         // Third, check if there's a department-wide override (no specific employees)
         // Only return department-wide override if it doesn't have any employee restrictions
-        $departmentOverride = \App\Models\ScheduleOverride::where('override_date', $date)
+        $departmentOverride = \App\Models\ScheduleOverride::whereDate('override_date', $dateStr)
             ->where('department_id', $employee->department_id)
             ->whereNull('employee_id')
             ->whereDoesntHave('employees') // No employees in many-to-many relationship
@@ -1504,41 +1543,31 @@ class AttendanceService
     }
 
     /**
-     * Determine if this is a working day FOR THIS SPECIFIC EMPLOYEE
-     * 
-     * IMPORTANT: If there's an employee-specific override, only that employee
-     * should have it as a working day. Other employees should NOT.
+     * Determine if this is a working day FOR THIS SPECIFIC EMPLOYEE.
+     *
+     * Priority:
+     *   1. override exists → override decides (no_work = false, anything else = true)
+     *   2. holiday exists  → false (not expected to work)
+     *   3. Saturday/Sunday → false by default (rest days)
+     *   4. schedule.is_working_day flag
      */
     private function isWorkingDay(Carbon $date, WorkSchedule $schedule, $holiday = null, $override = null): bool
     {
-        // If there's an override that says "no work expected", it's not a working day
-        if ($override && $override->override_type === 'no_work') {
-            return false;
+        // Override always wins first
+        if ($override) {
+            return $override->override_type !== 'no_work';
         }
 
-        // If it's a holiday, it's NOT a working day (company policy: no work no pay)
-        // Employees who come in on holidays get overtime but are not "expected" to work
+        // Holiday → not a working day
         if ($holiday) {
             return false;
         }
 
-        // Check if it's Saturday (day of week = 6)
-        if ($date->dayOfWeek === 6) {
-            // Saturday is only a working day if there's an override authorizing it
-            // Use 'special_schedule' or 'sunday_work' (reused for Saturday)
-            // IMPORTANT: Override must apply to THIS employee (not just exist for department)
-            return $override && in_array($override->override_type, ['special_schedule', 'sunday_work']);
+        // Weekends are rest days unless an override authorizes them
+        if ($date->dayOfWeek === 0 || $date->dayOfWeek === 6) {
+            return false;
         }
 
-        // Check if it's Sunday (day of week = 0)
-        if ($date->dayOfWeek === 0) {
-            // Sunday is only a working day if there's an override authorizing it
-            // Use 'special_schedule' or 'sunday_work'
-            // IMPORTANT: Override must apply to THIS employee (not just exist for department)
-            return $override && in_array($override->override_type, ['special_schedule', 'sunday_work']);
-        }
-
-        // Otherwise, use the schedule's is_working_day flag
         return $schedule->is_working_day;
     }
 

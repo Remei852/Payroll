@@ -2,272 +2,347 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Attendance Violation Letter</title>
+    <title>Notice of Attendance Violations</title>
     <style>
-        @page {
-            size: A4;
-            margin: 0;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
+        @page { size: A4; margin: 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            font-size: 12pt;
-            line-height: 1.6;
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 10pt;
+            line-height: 1.5;
             color: #1e293b;
             background: white;
-            margin: 0;
-            padding: 15mm;
+            padding: 15mm 18mm 15mm 18mm;
         }
-        
-        .letter-container {
-            width: 100%;
-            max-width: 100%;
+
+        /* ── Company header ── */
+        .company-header {
+            text-align: center;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #1e3a8a;
         }
-        
-        .text-center { text-align: center; }
-        .text-justify { text-align: justify; }
-        .font-bold { font-weight: 700; }
-        .font-semibold { font-weight: 600; }
-        .mb-2 { margin-bottom: 0.5rem; }
-        .mb-3 { margin-bottom: 0.75rem; }
-        .mb-6 { margin-bottom: 1.5rem; }
-        .mt-1 { margin-top: 0.25rem; }
-        .mt-4 { margin-top: 1rem; }
-        .mt-12 { margin-top: 3rem; }
-        .my-6 { margin-top: 1.5rem; margin-bottom: 1.5rem; }
-        .ml-4 { margin-left: 1rem; }
-        .ml-6 { margin-left: 1.5rem; }
-        .p-4 { padding: 1rem; }
-        
-        .space-y-1 > * + * { margin-top: 0.25rem; }
-        .space-y-2 > * + * { margin-top: 0.5rem; }
-        .space-y-4 > * + * { margin-top: 1rem; }
-        .space-y-8 > * + * { margin-top: 2rem; }
-        
-        .flex { display: flex; }
-        .gap-4 { gap: 1rem; }
-        .w-24 { width: 6rem; }
-        
-        .border { border: 1px solid #e2e8f0; }
-        .border-b { border-bottom: 1px solid #cbd5e1; }
-        .border-slate-400 { border-bottom-color: #94a3b8; }
-        .rounded-md { border-radius: 0.375rem; }
-        .bg-slate-50 { background-color: #f8fafc; }
-        
-        .text-slate-900 { color: #0f172a; }
-        .text-slate-700 { color: #334155; }
-        .text-slate-600 { color: #475569; }
-        .text-red-600 { color: #dc2626; }
-        
-        .list-disc { list-style-type: disc; }
-        .whitespace-pre-line { white-space: pre-line; }
-        .leading-relaxed { line-height: 1.625; }
-        
-        hr { border: 0; border-top: 1px solid #cbd5e1; }
+        .company-name { font-size: 13pt; font-weight: 700; color: #1e3a8a; letter-spacing: 0.04em; }
+        .company-address { font-size: 8.5pt; color: #64748b; margin-top: 2px; }
+
+        /* ── Letter title ── */
+        .letter-title {
+            text-align: center;
+            font-size: 12pt;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin: 10px 0 10px;
+            color: #0f172a;
+        }
+
+        /* ── Employee info block ── */
+        .info-block {
+            border: 1px solid #e2e8f0;
+            border-radius: 3px;
+            padding: 7px 10px;
+            margin-bottom: 10px;
+            background: #f8fafc;
+            font-size: 9.5pt;
+        }
+        .info-grid { display: table; width: 100%; }
+        .info-row  { display: table-row; }
+        .info-label { display: table-cell; width: 110px; font-weight: 700; padding: 1.5px 0; color: #475569; }
+        .info-value { display: table-cell; padding: 1.5px 0; }
+
+        hr { border: 0; border-top: 1px solid #cbd5e1; margin: 8px 0; }
+
+        /* ── Body text ── */
+        .body-text { font-size: 9.5pt; line-height: 1.55; margin-bottom: 8px; text-align: justify; }
+
+        /* ── Summary chips ── */
+        .summary-row { margin-bottom: 10px; }
+        .chip {
+            display: inline-block;
+            border: 1px solid #cbd5e1;
+            border-radius: 3px;
+            padding: 2px 7px;
+            font-size: 8.5pt;
+            margin-right: 5px;
+            background: #fff;
+        }
+        .chip-val { font-weight: 700; color: #dc2626; }
+
+        /* ── Section headings ── */
+        .section-heading {
+            font-size: 9.5pt;
+            font-weight: 700;
+            margin: 10px 0 4px;
+            padding-bottom: 2px;
+            border-bottom: 1px solid #cbd5e1;
+            color: #0f172a;
+        }
+
+        /* ── Section notice (policy paragraph per violation type) ── */
+        .section-notice {
+            font-size: 8.5pt;
+            color: #334155;
+            margin-bottom: 6px;
+            text-align: justify;
+            line-height: 1.5;
+            background: #f8fafc;
+            border-left: 3px solid #94a3b8;
+            padding: 5px 8px;
+            white-space: pre-line;
+        }
+
+        /* ── Evidence table ── */
+        .ev-table { width: auto; border-collapse: collapse; font-size: 8pt; margin-bottom: 8px; }
+        .ev-table th {
+            background: #1e3a8a;
+            color: #fff;
+            font-weight: 700;
+            padding: 3px 6px;
+            text-align: left;
+            font-size: 7.5pt;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+        .ev-table td { padding: 3px 6px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+        .ev-table tbody tr:nth-child(even) td { background: #f8fafc; }
+        .miss { color: #dc2626; font-weight: 700; }
+
+        /* ── Action required ── */
+        .action-box {
+            border: 1px solid #cbd5e1;
+            border-radius: 3px;
+            padding: 7px 10px;
+            font-size: 9.5pt;
+            margin-bottom: 8px;
+            background: #fefce8;
+            white-space: pre-line;
+        }
+
+        .closing { font-size: 9.5pt; line-height: 1.55; text-align: justify; margin-bottom: 8px; }
+
+        /* ── Signatures ── */
+        .sig-section { margin-top: 18px; }
+        .sig-row { display: table; width: 100%; }
+        .sig-col { display: table-cell; width: 50%; vertical-align: bottom; padding-right: 20px; }
+        .sig-line { border-bottom: 1px solid #64748b; width: 200px; margin-top: 26px; margin-bottom: 3px; }
+        .sig-name { font-weight: 700; font-size: 9.5pt; }
+        .sig-sub  { font-size: 8.5pt; color: #475569; }
     </style>
 </head>
 <body>
-    <div class="letter-container">
-        <!-- Title -->
-        <div class="mb-6 text-center">
-            <h1 class="font-bold" style="font-size: 1.5rem;">MEMORANDUM</h1>
+
+    {{-- Company header --}}
+    <!--
+    <div class="company-header">
+        <div class="company-name">{{ env('COMPANY_NAME', config('app.name')) }}</div>
+        @if(env('COMPANY_ADDRESS'))
+        <div class="company-address">{{ env('COMPANY_ADDRESS') }}</div>
+        @endif
+    </div> -->
+
+    {{-- Letter title --}}
+    <div class="letter-title">{{ $content['subject'] }}</div>
+
+    {{-- Employee info block --}}
+    <div class="info-block">
+        <div class="info-grid">
+            <div class="info-row"><div class="info-label">Employee Name:</div><div class="info-value">{{ $employee['name'] }}</div></div>
+            <div class="info-row"><div class="info-label">Employee Code:</div><div class="info-value">{{ $employee['code'] }}</div></div>
+            <div class="info-row"><div class="info-label">Department:</div><div class="info-value">{{ $employee['department'] }}</div></div>
+            <div class="info-row"><div class="info-label">Period Covered:</div><div class="info-value">{{ $dateRange['startFormatted'] }} to {{ $dateRange['endFormatted'] }}</div></div>
+            <div class="info-row"><div class="info-label">Date Issued:</div><div class="info-value">{{ $currentDate }}</div></div>
+            @if(!empty($content['referenceNo']))
+            <div class="info-row"><div class="info-label">Reference No.:</div><div class="info-value">{{ $content['referenceNo'] }}</div></div>
+            @endif
         </div>
+    </div>
 
-        <!-- Header Info -->
-        <div class="mb-6 space-y-2" style="font-size: 0.875rem;">
-            <div class="flex">
-                <span class="w-24 font-semibold">TO:</span>
-                <span>{{ $employee['name'] }} ({{ $employee['code'] }})</span>
+    <hr>
+
+    {{-- Opening paragraph --}}
+    <p class="body-text">{{ $content['opening'] }}</p>
+
+    {{-- Policy paragraph --}}
+    <p class="body-text">{{ $content['policyParagraph'] }}</p>
+
+    {{-- Summary --}}
+    <div class="summary-row">
+        @if($summary['totalAbsences'] > 0)
+            <span class="chip">Absences: <span class="chip-val">{{ $summary['totalAbsences'] }}</span></span>
+        @endif
+        @if($summary['totalLateAM'] > 0)
+            <span class="chip">Late AM: <span class="chip-val">{{ $summary['totalLateAM'] }}</span></span>
+        @endif
+        @if($summary['totalLatePM'] > 0)
+            <span class="chip">Late PM: <span class="chip-val">{{ $summary['totalLatePM'] }}</span></span>
+        @endif
+        @if($summary['totalMissedLogs'] > 0)
+            <span class="chip">Missing Logs: <span class="chip-val">{{ $summary['totalMissedLogs'] }}</span></span>
+        @endif
+        @if(($summary['totalUndertime'] ?? 0) > 0)
+            <span class="chip">Undertime: <span class="chip-val">{{ $summary['totalUndertime'] }}</span></span>
+        @endif
+    </div>
+
+    {{-- ── Absences ── --}}
+    @if(count($violations['absences']) > 0)
+    <div class="section-heading">Absences ({{ $summary['totalAbsences'] }} {{ $summary['totalAbsences'] == 1 ? 'day' : 'days' }})</div>
+    <table class="ev-table">
+        <thead><tr><th style="width:130px">Date</th><th>Status</th></tr></thead>
+        <tbody>
+            @foreach($violations['absences'] as $row)
+            <tr><td>{{ $row['dateFormatted'] }}</td><td>{{ $row['status'] }}</td></tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
+    {{-- ── Late AM ── --}}
+    @if(count($violations['lateAM']) > 0)
+    <div class="section-heading">Late Arrivals — Morning ({{ $summary['totalLateAM'] }} {{ $summary['totalLateAM'] == 1 ? 'instance' : 'instances' }})</div>
+    <table class="ev-table">
+        <thead><tr><th style="width:130px">Date</th><th style="width:90px">Time In</th><th style="width:100px">Late By</th></tr></thead>
+        <tbody>
+            @foreach($violations['lateAM'] as $row)
+            <tr><td>{{ $row['dateFormatted'] }}</td><td>{{ $row['timeIn'] ?? '—' }}</td><td>{{ $row['timeStr'] }}</td></tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
+    {{-- ── Late PM ── --}}
+    @if(count($violations['latePM']) > 0)
+    <div class="section-heading">Late Returns — Afternoon ({{ $summary['totalLatePM'] }} {{ $summary['totalLatePM'] == 1 ? 'instance' : 'instances' }})</div>
+    <table class="ev-table">
+        <thead><tr><th style="width:130px">Date</th><th style="width:90px">Time In (PM)</th><th style="width:100px">Late By</th></tr></thead>
+        <tbody>
+            @foreach($violations['latePM'] as $row)
+            <tr><td>{{ $row['dateFormatted'] }}</td><td>{{ $row['timeIn'] ?? '—' }}</td><td>{{ $row['timeStr'] }}</td></tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
+    {{-- ── Missing Logs ── --}}
+    @if(count($violations['missedLogs']) > 0)
+    <div class="section-heading">Missing Biometric Logs ({{ $summary['totalMissedLogs'] }} {{ $summary['totalMissedLogs'] == 1 ? 'instance' : 'instances' }})</div>
+    <table class="ev-table">
+        <thead>
+            <tr>
+                <th style="width:110px">Date</th>
+                <th style="width:72px">AM In</th>
+                <th style="width:72px">AM Out</th>
+                <th style="width:72px">PM In</th>
+                <th style="width:72px">PM Out</th>
+                <th>Missing Slots</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($violations['missedLogs'] as $row)
+            <tr>
+                <td>{{ $row['dateFormatted'] }}</td>
+                <td class="{{ !$row['timeInAM']    ? 'miss' : '' }}">{{ $row['timeInAM']    ?? '—' }}</td>
+                <td class="{{ !$row['timeOutLunch'] ? 'miss' : '' }}">{{ $row['timeOutLunch'] ?? '—' }}</td>
+                <td class="{{ !$row['timeInPM']    ? 'miss' : '' }}">{{ $row['timeInPM']    ?? '—' }}</td>
+                <td class="{{ !$row['timeOutPM']   ? 'miss' : '' }}">{{ $row['timeOutPM']   ?? '—' }}</td>
+                <td class="miss">{{ implode(', ', $row['missing']) }}</td>
+            </tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
+    @if(count($violations['absences']) == 0 && count($violations['lateAM']) == 0 && count($violations['latePM']) == 0 && count($violations['missedLogs']) == 0 && count($violations['undertime'] ?? []) == 0)
+    <p style="color:#166534; font-size:9.5pt; margin-bottom:10px;">No attendance violations found for this period.</p>
+    @endif
+
+    {{-- Undertime --}}
+    @if(count($violations['undertime'] ?? []) > 0)
+    <div class="section-heading">Undertime ({{ $summary['totalUndertime'] }} {{ $summary['totalUndertime'] == 1 ? 'instance' : 'instances' }})</div>
+    <table class="ev-table">
+        <thead><tr><th style="width:130px">Date</th><th style="width:90px">Time Out</th><th style="width:100px">Undertime By</th></tr></thead>
+        <tbody>
+            @foreach($violations['undertime'] as $row)
+            <tr><td>{{ $row['dateFormatted'] }}</td><td>{{ $row['timeOut'] ?? '—' }}</td><td>{{ $row['timeStr'] }}</td></tr>
+            @endforeach
+        </tbody>
+    </table>
+    @endif
+
+    {{-- Consolidated notes — plain paragraphs, no box --}}
+    @if(count($violations['absences']) > 0 || count($violations['lateAM']) > 0 || count($violations['latePM']) > 0 || count($violations['missedLogs']) > 0 || count($violations['undertime'] ?? []) > 0)
+    <div style="border-top:1px solid #e2e8f0; padding-top:8px; margin-bottom:10px; margin-top:4px;">
+        @if(count($violations['absences']) > 0)
+        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
+            <strong>Absences:</strong> {{ $content['absenceNotice'] }}
+        </p>
+        @endif
+        @if(count($violations['lateAM']) > 0)
+        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
+            <strong>Late AM:</strong> {{ $content['lateAMNotice'] }}
+        </p>
+        @endif
+        @if(count($violations['latePM']) > 0)
+        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
+            <strong>Late PM:</strong> {{ $content['latePMNotice'] }}
+        </p>
+        @endif
+        @if(count($violations['missedLogs']) > 0)
+        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
+            <strong>Missing Logs:</strong> {{ $content['missedLogNotice'] }}
+        </p>
+        @endif
+        @if(count($violations['undertime'] ?? []) > 0)
+        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
+            <strong>Undertime:</strong> {{ $content['undertimeNotice'] }}
+        </p>
+        @endif
+    </div>
+    @endif
+
+    {{-- Action required — dynamic list based on violations present --}}
+    <div class="action-box">
+        <strong>Action Required:</strong>
+        <ol style="margin-left:16px; margin-top:5px;">
+            <li style="margin-bottom:3px;">Report to the Human Resources office within five (5) working days from receipt of this memorandum.</li>
+            <li style="margin-bottom:3px;">Submit a written explanation for each violation category listed above within two (2) business days.</li>
+            @if(count($violations['absences']) > 0)
+            <li style="margin-bottom:3px;">For absences, provide supporting documentation (e.g., medical certificate or approved leave form).</li>
+            @endif
+            @if(count($violations['missedLogs'] ?? []) > 0)
+            <li style="margin-bottom:3px;">For missing biometric logs, attach proof of attendance (supervisor certification, work output, or other verifiable evidence).</li>
+            @endif
+            @if(count($violations['lateAM']) > 0 || count($violations['latePM']) > 0)
+            <li style="margin-bottom:3px;">For late arrivals, explain the reason and commit to a corrective action plan.</li>
+            @endif
+            @if(count($violations['undertime'] ?? []) > 0)
+            <li style="margin-bottom:3px;">For undertime, secure prior approval for early departures or provide a valid justification.</li>
+            @endif
+        </ol>
+    </div>
+
+    {{-- Closing --}}
+    <p class="closing">{{ $content['closing'] }}</p>
+
+    {{-- Signatures --}}
+    <div class="sig-section">
+        <div class="sig-row">
+            <div class="sig-col">
+                <p class="sig-sub">Prepared by:</p>
+                <div class="sig-line"></div>
+                <p class="sig-name">{{ $content['preparedBy'] }}</p>
+                <p class="sig-sub">{{ $content['position'] }}</p>
             </div>
-            <div class="flex">
-                <span class="w-24 font-semibold">DEPARTMENT:</span>
-                <span>{{ $employee['department'] }}</span>
-            </div>
-            <div class="flex">
-                <span class="w-24 font-semibold">FROM:</span>
-                <span>Human Resources Department</span>
-            </div>
-            <div class="flex">
-                <span class="w-24 font-semibold">DATE:</span>
-                <span>{{ $currentDate }}</span>
-            </div>
-            <div class="flex">
-                <span class="w-24 font-semibold">SUBJECT:</span>
-                <span>Attendance Violation Notice</span>
-            </div>
-        </div>
-
-        <hr class="my-6" />
-
-        <!-- Body -->
-        <div class="space-y-4 leading-relaxed" style="font-size: 0.875rem;">
-            <!-- Opening -->
-            <p class="text-justify">
-                This memorandum serves as a formal notice regarding attendance violations observed in your employment record.
-            </p>
-
-            <!-- Date Range -->
-            <p>
-                <span class="font-semibold">Period Covered:</span>
-                {{ $dateRange['startFormatted'] }} to {{ $dateRange['endFormatted'] }}
-            </p>
-
-            <!-- Violation Breakdown -->
-            <div>
-                <p class="mb-3 font-semibold">The following attendance violations have been recorded:</p>
-                
-                <div class="space-y-4 rounded-md border bg-slate-50 p-4">
-
-                    @php
-                        $sectionNumber = 1;
-                    @endphp
-
-                    <!-- Absences -->
-                    @if(count($violations['absences']) > 0)
-                        <div>
-                            <p class="mb-2 font-semibold text-slate-900">
-                                {{ $sectionNumber }}. Absences ({{ $summary['totalAbsences'] }} {{ $summary['totalAbsences'] == 1 ? 'day' : 'days' }}):
-                            </p>
-                            <ul class="ml-6 list-disc space-y-1 text-slate-700">
-                                @foreach($violations['absences'] as $absence)
-                                    <li>{{ $absence['dateFormatted'] }} - {{ $absence['status'] }}</li>
-                                @endforeach
-                            </ul>
-                        </div>
-                        @php $sectionNumber++; @endphp
-                    @endif
-
-                    <!-- Late AM -->
-                    @if(count($violations['lateAM']) > 0)
-                        <div>
-                            <p class="mb-2 font-semibold text-slate-900">
-                                {{ $sectionNumber }}. Late Arrivals (Morning) ({{ $summary['totalLateAM'] }} {{ $summary['totalLateAM'] == 1 ? 'instance' : 'instances' }}):
-                            </p>
-                            <ul class="ml-6 list-disc space-y-1 text-slate-700">
-                                @foreach($violations['lateAM'] as $late)
-                                    <li>
-                                        {{ $late['dateFormatted'] }} - 
-                                        @php
-                                            $hours = floor($late['minutes'] / 60);
-                                            $mins = $late['minutes'] % 60;
-                                            $timeStr = '';
-                                            if ($hours > 0) {
-                                                $timeStr = $hours . ' hour' . ($hours > 1 ? 's' : '') . ' ';
-                                            }
-                                            $timeStr .= $mins . ' minute' . ($mins != 1 ? 's' : '');
-                                        @endphp
-                                        {{ $timeStr }} late
-                                        @if($late['timeIn'])
-                                            <span class="text-slate-600"> (Time In: {{ $late['timeIn'] }})</span>
-                                        @endif
-                                    </li>
-                                @endforeach
-                            </ul>
-                        </div>
-                        @php $sectionNumber++; @endphp
-                    @endif
-
-                    <!-- Late PM -->
-                    @if(count($violations['latePM']) > 0)
-                        <div>
-                            <p class="mb-2 font-semibold text-slate-900">
-                                {{ $sectionNumber }}. Late Arrivals (Afternoon) ({{ $summary['totalLatePM'] }} {{ $summary['totalLatePM'] == 1 ? 'instance' : 'instances' }}):
-                            </p>
-                            <ul class="ml-6 list-disc space-y-1 text-slate-700">
-                                @foreach($violations['latePM'] as $late)
-                                    <li>
-                                        {{ $late['dateFormatted'] }} - 
-                                        @php
-                                            $hours = floor($late['minutes'] / 60);
-                                            $mins = $late['minutes'] % 60;
-                                            $timeStr = '';
-                                            if ($hours > 0) {
-                                                $timeStr = $hours . ' hour' . ($hours > 1 ? 's' : '') . ' ';
-                                            }
-                                            $timeStr .= $mins . ' minute' . ($mins != 1 ? 's' : '');
-                                        @endphp
-                                        {{ $timeStr }} late
-                                        @if($late['timeIn'])
-                                            <span class="text-slate-600"> (Time In: {{ $late['timeIn'] }})</span>
-                                        @endif
-                                    </li>
-                                @endforeach
-                            </ul>
-                        </div>
-                        @php $sectionNumber++; @endphp
-                    @endif
-
-                    <!-- Missed Logs -->
-                    @if(count($violations['missedLogs']) > 0)
-                        <div>
-                            <p class="mb-2 font-semibold text-slate-900">
-                                {{ $sectionNumber }}. Missed Clock-in/Clock-out Logs ({{ $summary['totalMissedLogs'] }} {{ $summary['totalMissedLogs'] == 1 ? 'instance' : 'instances' }}):
-                            </p>
-                            <ul class="ml-6 list-disc space-y-1 text-slate-700">
-                                @foreach($violations['missedLogs'] as $missed)
-                                    <li>
-                                        <div>{{ $missed['dateFormatted'] }} - {{ $missed['count'] }} {{ $missed['count'] == 1 ? 'log' : 'logs' }} missing</div>
-                                        <div class="ml-4" style="font-size: 0.75rem;">
-                                            <div>Time In AM: {!! $missed['timeInAM'] ? $missed['timeInAM'] : '<span class="text-red-600 font-semibold">Missed Log</span>' !!}</div>
-                                            <div>Time Out Lunch: {!! $missed['timeOutLunch'] ? $missed['timeOutLunch'] : '<span class="text-red-600 font-semibold">Missed Log</span>' !!}</div>
-                                            <div>Time In PM: {!! $missed['timeInPM'] ? $missed['timeInPM'] : '<span class="text-red-600 font-semibold">Missed Log</span>' !!}</div>
-                                            <div>Time Out PM: {!! $missed['timeOutPM'] ? $missed['timeOutPM'] : '<span class="text-red-600 font-semibold">Missed Log</span>' !!}</div>
-                                        </div>
-                                    </li>
-                                @endforeach
-                            </ul>
-                        </div>
-                    @endif
-
-                    <!-- No violations message -->
-                    @if(count($violations['absences']) == 0 && count($violations['lateAM']) == 0 && count($violations['latePM']) == 0 && count($violations['missedLogs']) == 0)
-                        <p style="font-size: 0.875rem; color: #166534;">No attendance violations found for this period.</p>
-                    @endif
-                </div>
-            </div>
-
-            <!-- Action Required -->
-            <div>
-                <p class="mb-2 font-semibold">Action Required:</p>
-                <div class="whitespace-pre-line text-justify">You are hereby required to:
-1. Report to the Human Resources office within five (5) working days from receipt of this memorandum
-2. Submit a written explanation regarding the attendance violations listed above</div>
-            </div>
-
-            <!-- Closing -->
-            <p class="text-justify">
-                Your immediate attention to this matter is expected. Failure to comply may result in further disciplinary action in accordance with company policy.
-            </p>
-        </div>
-
-        <!-- Signature Section -->
-        <div class="mt-12 space-y-8">
-            <div>
-                <p style="font-size: 0.875rem;">Respectfully,</p>
-                <div class="mt-12 border-b border-slate-400" style="width: 250px;"></div>
-                <p class="mt-1 font-semibold" style="font-size: 0.875rem;">Manager Name</p>
-                <p class="text-slate-600" style="font-size: 0.875rem;">Manager Title</p>
-            </div>
-
-            <div>
-                <p style="font-size: 0.875rem;">Acknowledged by:</p>
-                <div class="mt-12 border-b border-slate-400" style="width: 250px;"></div>
-                <p class="mt-1 font-semibold" style="font-size: 0.875rem;">{{ $employee['name'] }}</p>
-                <p class="text-slate-600" style="font-size: 0.875rem;">Employee</p>
-                <div class="mt-4 flex gap-4">
-                    <div>
-                        <span style="font-size: 0.875rem;">Date: </span>
-                        <span class="inline-block border-b border-slate-400" style="width: 150px;"></span>
-                    </div>
-                </div>
+            <div class="sig-col">
+                <p class="sig-sub">Acknowledged by:</p>
+                <div class="sig-line"></div>
+                <p class="sig-name">{{ $employee['name'] }}</p>
+                <p class="sig-sub">Employee &nbsp;&nbsp;&nbsp; Date: ___________________</p>
             </div>
         </div>
     </div>
+
 </body>
 </html>

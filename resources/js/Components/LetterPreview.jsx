@@ -108,12 +108,12 @@ const LetterPreview = forwardRef(({ data }, ref) => {
                     <p className="text-sm">Respectfully,</p>
                     <div className="mt-12 border-b border-slate-400" style={{ width: '250px' }}></div>
                     <EditableSection
-                        content="Manager Name"
+                        content="Mark Lester M. To-ong"
                         onChange={() => {}}
                         className="mt-1 text-sm font-semibold"
                     />
                     <EditableSection
-                        content="Manager Title"
+                        content="Operations Manager"
                         onChange={() => {}}
                         className="text-sm text-slate-600"
                     />

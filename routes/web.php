@@ -40,6 +40,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Attendance Reports
     Route::get('/attendance/report', [AttendanceReportController::class, 'index'])->name('admin.attendance.report');
+    Route::get('/attendance/report/generate', function () {
+        return redirect()->route('admin.attendance.report');
+    });
     Route::post('/attendance/report/generate', [AttendanceReportController::class, 'generate'])->name('admin.attendance.report.generate');
 
     Route::get('/attendance/summary', function () {
@@ -77,12 +80,23 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/violations', [ViolationsController::class, 'index'])->name('admin.violations.index');
     Route::get('/violations/export/csv', [ViolationsController::class, 'export'])->name('admin.violations.export');
     Route::post('/violations/bulk-print', [ViolationsController::class, 'bulkPrint'])->name('admin.violations.bulk-print');
-    Route::get('/violations/{id}', [ViolationsController::class, 'show'])->name('admin.violations.show');
-    Route::get('/violations/{id}/print', [ViolationsController::class, 'print'])->name('admin.violations.print');
-    Route::patch('/violations/{id}/status', [ViolationsController::class, 'updateStatus'])->name('admin.violations.update-status');
-    Route::patch('/violations/{id}/notes', [ViolationsController::class, 'updateNotes'])->name('admin.violations.update-notes');
-    Route::post('/violations/{id}/dismiss', [ViolationsController::class, 'dismissViolation'])->name('admin.violations.dismiss');
+
+    // Bulk violation letters — POST with employee_ids[], dateFrom, dateTo
+    Route::post('/violations/letters/bulk', [AttendanceController::class, 'downloadBulkViolationPDF'])->name('admin.violations.download-letters-bulk');
+    // Bulk violation letters resolved from violation filters (no client-side ID list)
+    Route::post('/violations/letters/bulk-filtered', [AttendanceController::class, 'downloadBulkViolationPDFByFilter'])->name('admin.violations.download-letters-bulk-filtered');
+
+    Route::get('/violations/{id}', [ViolationsController::class, 'show'])->name('admin.violations.show')->where('id', '[0-9]+');
+    Route::get('/violations/{id}/print', [ViolationsController::class, 'print'])->name('admin.violations.print')->where('id', '[0-9]+');
+    Route::patch('/violations/{id}/status', [ViolationsController::class, 'updateStatus'])->name('admin.violations.update-status')->where('id', '[0-9]+');
+    Route::patch('/violations/{id}/notes', [ViolationsController::class, 'updateNotes'])->name('admin.violations.update-notes')->where('id', '[0-9]+');
+    Route::post('/violations/{id}/dismiss', [ViolationsController::class, 'dismissViolation'])->name('admin.violations.dismiss')->where('id', '[0-9]+');
     
+    // Violation letter PDF — employee_id + optional dateFrom/dateTo query params
+    Route::get('/employees/{employeeId}/violation-letter', [AttendanceController::class, 'downloadViolationPDF'])->name('admin.violations.download-letter');
+    Route::post('/employees/{employeeId}/violation-letter', [AttendanceController::class, 'downloadViolationPDF'])->name('admin.violations.download-letter-post');
+    Route::get('/employees/{employeeId}/violation-letter/data', [AttendanceController::class, 'getViolationLetterData'])->name('admin.violations.letter-data');
+
     // Grace Period Settings
     Route::get('/settings/grace-period/{departmentId}', [ViolationsController::class, 'getGracePeriodSettings'])->name('admin.settings.grace-period.show');
     Route::put('/settings/grace-period/{departmentId}', [ViolationsController::class, 'updateGracePeriodSettings'])->name('admin.settings.grace-period.update');

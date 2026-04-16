@@ -116,16 +116,19 @@ export default function Manage() {
     }
 
     function openEditDrawer(dept) {
+        // Strip seconds from HH:MM:SS → HH:MM so the time input and validation both work
+        const fmtTime = (t) => t ? t.substring(0, 5) : null;
+
         setSelectedDepartmentId(dept.id);
         setDrawerMode('edit');
         setFormData({
             name: dept.name,
             payrollFrequency: dept.payroll_frequency || '',
             isActive: dept.is_active,
-            workStartTime: dept.work_schedule?.work_start_time || '08:00',
-            workEndTime: dept.work_schedule?.work_end_time || '17:00',
-            breakStartTime: dept.work_schedule?.break_start_time || '12:00',
-            breakEndTime: dept.work_schedule?.break_end_time || '13:00',
+            workStartTime: fmtTime(dept.work_schedule?.work_start_time) || '08:00',
+            workEndTime: fmtTime(dept.work_schedule?.work_end_time) || '17:00',
+            breakStartTime: fmtTime(dept.work_schedule?.break_start_time) || '12:00',
+            breakEndTime: fmtTime(dept.work_schedule?.break_end_time) || '13:00',
             gracePeriodMinutes: dept.work_schedule?.grace_period_minutes || 15,
         });
         setSelectedDepartment({
