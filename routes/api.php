@@ -56,6 +56,9 @@ Route::middleware(['web', 'auth', 'verified'])->group(function () {
     Route::get('attendance/records/{recordId}/changes', [AttendanceController::class, 'getChangeHistory'])
         ->name('api.attendance.records.changes');
 
+    Route::post('attendance/records/{recordId}/override-overtime', [AttendanceController::class, 'overrideOvertime'])
+        ->name('api.attendance.records.override-overtime');
+
     // Raw attendance logs for a specific employee + date
     Route::get('attendance/logs/raw', [AttendanceController::class, 'getRawLogsForDate'])
         ->name('api.attendance.logs.raw');

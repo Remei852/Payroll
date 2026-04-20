@@ -28,7 +28,7 @@ class AttendanceController extends Controller
             $file = $request->file('file');
             $originalName = $file->getClientOriginalName();
             
-            // Store temporarily, parse into attendance_logs only — no processing
+            // Store temporarily, parse into attendance_logs only â€” no processing
             $path = $file->storeAs('temp', uniqid() . '_' . $originalName);
             $fullPath = Storage::path($path);
 
@@ -542,6 +542,7 @@ class AttendanceController extends Controller
             'dateTo'   => 'nullable|date|after_or_equal:dateFrom',
             'markSent' => 'nullable|in:0,1',
             'paper_size' => 'nullable|in:A4,legal,letter',
+            'format' => 'nullable|in:pdf,word',
         ]);
 
         try {
@@ -592,6 +593,11 @@ class AttendanceController extends Controller
                 }
             }
 
+            // Check if Word format is requested
+            if ($request->input('format') === 'word') {
+                return $this->generateWordDocument($allEmployeeData);
+            }
+
             $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.violation-letter-bulk', [
                 'employees' => $allEmployeeData,
             ]);
@@ -602,7 +608,7 @@ class AttendanceController extends Controller
 
             $filename = 'Violation_Letters_' . Carbon::now()->format('Y-m-d') . '.pdf';
 
-            // ?preview=1 → stream inline so the browser shows it before saving
+            // ?preview=1 â†’ stream inline so the browser shows it before saving
             if ($request->boolean('preview')) {
                 return $pdf->stream($filename);
             }
@@ -621,7 +627,7 @@ class AttendanceController extends Controller
 
     /**
      * Bulk violation PDF resolved entirely server-side from violation filters.
-     * Used by the Violations page "Print All Filtered" action — no client-side ID list needed.
+     * Used by the Violations page "Print All Filtered" action â€” no client-side ID list needed.
      */
     public function downloadBulkViolationPDFByFilter(Request $request)
     {
@@ -705,6 +711,260 @@ class AttendanceController extends Controller
         }
 
         $query->update(['status' => 'Letter Sent']);
+    }
+    private function generateWordDocument(array $allEmployeeData)
+    {
+        $phpWord = new \PhpOffice\PhpWord\PhpWord();
+        $phpWord->setDefaultFontName('Arial');
+        $phpWord->setDefaultFontSize(10);
+
+        // Register named table styles so addRow()/addCell() work reliably
+        $phpWord->addTableStyle('ViolationTable', [
+            'borderSize'  => 6,
+            'borderColor' => 'e2e8f0',
+            'cellMargin'  => 60,
+        ]);
+        $phpWord->addTableStyle('InfoTable', [
+            'borderSize'  => 6,
+            'borderColor' => 'e2e8f0',
+            'cellMargin'  => 60,
+        ]);
+        $phpWord->addTableStyle('SigTable', [
+            'borderSize'  => 0,
+            'borderColor' => 'FFFFFF',
+            'cellMargin'  => 60,
+        ]);
+
+        $headerStyle = ['bold' => true, 'size' => 12, 'allCaps' => true];
+        $labelStyle  = ['bold' => true, 'size' => 9, 'color' => '475569'];
+        $bodyStyle   = ['size' => 9];
+        $redBold     = ['bold' => true, 'color' => 'dc2626', 'size' => 9];
+        $sectionHead = ['bold' => true, 'size' => 9, 'color' => '0f172a'];
+        $tableHead   = ['bold' => true, 'color' => 'FFFFFF', 'size' => 8];
+        $signStyle   = ['bold' => true, 'size' => 9];
+        $subStyle    = ['size' => 8, 'color' => '475569'];
+
+        $thCellStyle = ['bgColor' => '1e3a8a'];
+        $tdCellStyle = null;
+        $tdAltStyle  = ['bgColor' => 'f8fafc'];
+
+        foreach ($allEmployeeData as $index => $emp) {
+            $section = $phpWord->addSection([
+                'marginTop'    => 720,
+                'marginBottom' => 720,
+                'marginLeft'   => 1080,
+                'marginRight'  => 1080,
+            ]);
+
+            // Title
+            $titlePara = $section->addParagraph();
+            $titlePara->addText('NOTICE OF ATTENDANCE VIOLATIONS', $headerStyle);
+            $titlePara->setParagraphStyle(['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER, 'spaceAfter' => 120]);
+
+            // Info block
+            $infoTable = $section->addTable(['borderSize' => 6, 'borderColor' => 'e2e8f0', 'cellMargin' => 60, 'bgColor' => 'f8fafc']);
+            $infoRows = [
+                ['Employee Name:', $emp['employee']['name']],
+                ['Employee Code:', $emp['employee']['code']],
+                ['Department:',    $emp['employee']['department']],
+                ['Period Covered:', ($emp['dateRange']['startFormatted'] ?? '') . ' to ' . ($emp['dateRange']['endFormatted'] ?? '')],
+                ['Date Issued:',   $emp['currentDate']],
+            ];
+            foreach ($infoRows as $row) {
+                $tr = $infoTable->addRow();
+                $tr->addCell(1800, ['bgColor' => 'f8fafc'])->addText($row[0], $labelStyle);
+                $tr->addCell(6000, ['bgColor' => 'f8fafc'])->addText($row[1], $bodyStyle);
+            }
+
+            $section->addTextBreak(1);
+
+            // Opening paragraphs
+            $p1 = $section->addParagraph();
+            $p1->addText('This memorandum is issued to formally notify you of attendance irregularities recorded during the covered period stated below.', $bodyStyle);
+            $p1->setParagraphStyle(['spaceAfter' => 80, 'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::BOTH]);
+
+            $p2 = $section->addParagraph();
+            $p2->addText('As provided in the company\'s attendance policy, employees are expected to observe proper working hours, maintain punctuality, and complete all required daily time logs. The official start time is ' . $emp['scheduleStartTime'] . '.', $bodyStyle);
+            $p2->setParagraphStyle(['spaceAfter' => 80, 'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::BOTH]);
+
+            // Summary chips (inline text)
+            $s = $emp['summary'];
+            $v = $emp['violations'];
+            $summaryParts = [];
+            if ($s['totalAbsences'] > 0)   $summaryParts[] = 'Absences: ' . $s['totalAbsences'];
+            if ($s['totalLateAM'] > 0)     $summaryParts[] = 'Late AM: ' . $s['totalLateAM'];
+            if ($s['totalLatePM'] > 0)     $summaryParts[] = 'Late PM: ' . $s['totalLatePM'];
+            if ($s['totalMissedLogs'] > 0) $summaryParts[] = 'Missing Logs: ' . $s['totalMissedLogs'];
+            if (($s['totalUndertime'] ?? 0) > 0) $summaryParts[] = 'Undertime: ' . $s['totalUndertime'];
+
+            if (!empty($summaryParts)) {
+                $sp = $section->addParagraph();
+                $sp->addText(implode('   |   ', $summaryParts), $redBold);
+                $sp->setParagraphStyle(['spaceAfter' => 100]);
+            }
+
+            // Absences table
+            if (count($v['absences']) > 0) {
+                $sh = $section->addParagraph();
+                $sh->addText('Absences (' . $s['totalAbsences'] . ' ' . ($s['totalAbsences'] == 1 ? 'day' : 'days') . ')', $sectionHead);
+                $sh->setParagraphStyle(['spaceAfter' => 60, 'borderBottomSize' => 6, 'borderBottomColor' => 'cbd5e1']);
+
+                $t = $section->addTable($tableStyle);
+                $hr = $t->addRow();
+                $hr->addCell(2000, $thCellStyle)->addText('Date', $tableHead);
+                $hr->addCell(5800, $thCellStyle)->addText('Status', $tableHead);
+                foreach ($v['absences'] as $i => $row) {
+                    $tr = $t->addRow();
+                    $cs = $i % 2 === 1 ? $tdAltStyle : $tdCellStyle;
+                    $tr->addCell(2000, $cs)->addText($row['dateFormatted'], $bodyStyle);
+                    $tr->addCell(5800, $cs)->addText($row['status'], $bodyStyle);
+                }
+                $section->addTextBreak(1);
+            }
+
+            // Late AM table
+            if (count($v['lateAM']) > 0) {
+                $sh = $section->addParagraph();
+                $sh->addText('Late Arrivals â€” Morning (' . $s['totalLateAM'] . ' ' . ($s['totalLateAM'] == 1 ? 'instance' : 'instances') . ')', $sectionHead);
+                $sh->setParagraphStyle(['spaceAfter' => 60, 'borderBottomSize' => 6, 'borderBottomColor' => 'cbd5e1']);
+
+                $t = $section->addTable($tableStyle);
+                $hr = $t->addRow();
+                $hr->addCell(2000, $thCellStyle)->addText('Date', $tableHead);
+                $hr->addCell(1800, $thCellStyle)->addText('Time In', $tableHead);
+                $hr->addCell(2000, $thCellStyle)->addText('Late By', $tableHead);
+                foreach ($v['lateAM'] as $i => $row) {
+                    $tr = $t->addRow();
+                    $cs = $i % 2 === 1 ? $tdAltStyle : $tdCellStyle;
+                    $tr->addCell(2000, $cs)->addText($row['dateFormatted'], $bodyStyle);
+                    $tr->addCell(1800, $cs)->addText($row['timeIn'] ?? 'â€”', $bodyStyle);
+                    $tr->addCell(2000, $cs)->addText($row['timeStr'], $bodyStyle);
+                }
+                $section->addTextBreak(1);
+            }
+
+            // Late PM table
+            if (count($v['latePM']) > 0) {
+                $sh = $section->addParagraph();
+                $sh->addText('Late Returns â€” Afternoon (' . $s['totalLatePM'] . ' ' . ($s['totalLatePM'] == 1 ? 'instance' : 'instances') . ')', $sectionHead);
+                $sh->setParagraphStyle(['spaceAfter' => 60, 'borderBottomSize' => 6, 'borderBottomColor' => 'cbd5e1']);
+
+                $t = $section->addTable($tableStyle);
+                $hr = $t->addRow();
+                $hr->addCell(2000, $thCellStyle)->addText('Date', $tableHead);
+                $hr->addCell(1800, $thCellStyle)->addText('Time In (PM)', $tableHead);
+                $hr->addCell(2000, $thCellStyle)->addText('Late By', $tableHead);
+                foreach ($v['latePM'] as $i => $row) {
+                    $tr = $t->addRow();
+                    $cs = $i % 2 === 1 ? $tdAltStyle : $tdCellStyle;
+                    $tr->addCell(2000, $cs)->addText($row['dateFormatted'], $bodyStyle);
+                    $tr->addCell(1800, $cs)->addText($row['timeIn'] ?? 'â€”', $bodyStyle);
+                    $tr->addCell(2000, $cs)->addText($row['timeStr'], $bodyStyle);
+                }
+                $section->addTextBreak(1);
+            }
+
+            // Missing Logs table
+            if (count($v['missedLogs']) > 0) {
+                $sh = $section->addParagraph();
+                $sh->addText('Missing Biometric Logs (' . $s['totalMissedLogs'] . ' ' . ($s['totalMissedLogs'] == 1 ? 'instance' : 'instances') . ')', $sectionHead);
+                $sh->setParagraphStyle(['spaceAfter' => 60, 'borderBottomSize' => 6, 'borderBottomColor' => 'cbd5e1']);
+
+                $t = $section->addTable($tableStyle);
+                $hr = $t->addRow();
+                $hr->addCell(1600, $thCellStyle)->addText('Date', $tableHead);
+                $hr->addCell(1200, $thCellStyle)->addText('AM In', $tableHead);
+                $hr->addCell(1200, $thCellStyle)->addText('AM Out', $tableHead);
+                $hr->addCell(1200, $thCellStyle)->addText('PM In', $tableHead);
+                $hr->addCell(1200, $thCellStyle)->addText('PM Out', $tableHead);
+                $hr->addCell(2400, $thCellStyle)->addText('Missing Slots', $tableHead);
+                foreach ($v['missedLogs'] as $i => $row) {
+                    $tr = $t->addRow();
+                    $cs = $i % 2 === 1 ? $tdAltStyle : $tdCellStyle;
+                    $tr->addCell(1600, $cs)->addText($row['dateFormatted'], $bodyStyle);
+                    $tr->addCell(1200, $cs)->addText($row['timeInAM']    ?? 'â€”', !$row['timeInAM']    ? $redBold : $bodyStyle);
+                    $tr->addCell(1200, $cs)->addText($row['timeOutLunch'] ?? 'â€”', !$row['timeOutLunch'] ? $redBold : $bodyStyle);
+                    $tr->addCell(1200, $cs)->addText($row['timeInPM']    ?? 'â€”', !$row['timeInPM']    ? $redBold : $bodyStyle);
+                    $tr->addCell(1200, $cs)->addText($row['timeOutPM']   ?? 'â€”', !$row['timeOutPM']   ? $redBold : $bodyStyle);
+                    $tr->addCell(2400, $cs)->addText(implode(', ', $row['missing']), $redBold);
+                }
+                $section->addTextBreak(1);
+            }
+
+            // Undertime table
+            if (count($v['undertime'] ?? []) > 0) {
+                $sh = $section->addParagraph();
+                $sh->addText('Undertime (' . $s['totalUndertime'] . ' ' . ($s['totalUndertime'] == 1 ? 'instance' : 'instances') . ')', $sectionHead);
+                $sh->setParagraphStyle(['spaceAfter' => 60, 'borderBottomSize' => 6, 'borderBottomColor' => 'cbd5e1']);
+
+                $t = $section->addTable($tableStyle);
+                $hr = $t->addRow();
+                $hr->addCell(2000, $thCellStyle)->addText('Date', $tableHead);
+                $hr->addCell(1800, $thCellStyle)->addText('Time Out', $tableHead);
+                $hr->addCell(2000, $thCellStyle)->addText('Undertime By', $tableHead);
+                foreach ($v['undertime'] as $i => $row) {
+                    $tr = $t->addRow();
+                    $cs = $i % 2 === 1 ? $tdAltStyle : $tdCellStyle;
+                    $tr->addCell(2000, $cs)->addText($row['dateFormatted'], $bodyStyle);
+                    $tr->addCell(1800, $cs)->addText($row['timeOut'] ?? 'â€”', $bodyStyle);
+                    $tr->addCell(2000, $cs)->addText($row['timeStr'], $bodyStyle);
+                }
+                $section->addTextBreak(1);
+            }
+
+            // Action Required
+            $section->addText('Action Required:', ['bold' => true, 'size' => 9]);
+            $actionItems = ['Submit a written explanation for each violation category listed above within two (2) business days.'];
+            if (count($v['absences']) > 0)
+                $actionItems[] = 'For absences, provide supporting documentation (e.g., medical certificate or approved leave form).';
+            if (count($v['missedLogs'] ?? []) > 0)
+                $actionItems[] = 'For missing biometric logs, attach proof of attendance (supervisor certification, work output, or other verifiable evidence).';
+            if (count($v['lateAM']) > 0 || count($v['latePM']) > 0)
+                $actionItems[] = 'For late arrivals, explain the reason and commit to a corrective action plan.';
+            if (count($v['undertime'] ?? []) > 0)
+                $actionItems[] = 'For undertime, secure prior approval for early departures or provide a valid justification.';
+
+            foreach ($actionItems as $num => $item) {
+                $ap = $section->addParagraph();
+                $ap->addText(($num + 1) . '. ' . $item, $bodyStyle);
+                $ap->setParagraphStyle(['indent' => 360, 'spaceAfter' => 40]);
+            }
+
+            $section->addTextBreak(1);
+
+            // Closing
+            $cp = $section->addParagraph();
+            $cp->addText('Failure to comply or repeated violations may result in further disciplinary action in accordance with company policy.', $bodyStyle);
+            $cp->setParagraphStyle(['spaceAfter' => 200, 'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::BOTH]);
+
+            // Signatures
+            $sigTable = $section->addTable(['borderSize' => 0, 'borderColor' => 'FFFFFF', 'cellMargin' => 60]);
+            $sr = $sigTable->addRow();
+            $leftCell  = $sr->addCell(3800);
+            $rightCell = $sr->addCell(3800);
+
+            $leftCell->addText('Prepared by:', $subStyle);
+            $leftCell->addText('', $bodyStyle);
+            $leftCell->addText('', $bodyStyle);
+            $leftCell->addText('MARK LESTER M. TO-ONG', $signStyle);
+            $leftCell->addText('Operations Manager', $subStyle);
+
+            $rightCell->addText('Acknowledged by:', $subStyle);
+            $rightCell->addText('', $bodyStyle);
+            $rightCell->addText('', $bodyStyle);
+            $rightCell->addText($emp['employee']['name'], $signStyle);
+            $rightCell->addText('Employee     Date: ___________________', $subStyle);
+        }
+
+        $filename = 'Violation_Letters_' . Carbon::now()->format('Y-m-d') . '.docx';
+        $tempPath = tempnam(sys_get_temp_dir(), 'violation_') . '.docx';
+
+        $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($tempPath);
+
+        return response()->download($tempPath, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ])->deleteFileAfterSend(true);
     }
 
     /**
@@ -833,8 +1093,8 @@ class AttendanceController extends Controller
                 continue;
             }
 
-            // Format a time value as HH:mm:ss or — if null
-            $fmt = fn($t) => $t ? substr($t, 0, 8) : '—';
+            // Format a time value as HH:mm:ss or â€” if null
+            $fmt = fn($t) => $t ? substr($t, 0, 8) : 'â€”';
 
             // Build remarks list
             $remarks = [];
@@ -883,7 +1143,7 @@ class AttendanceController extends Controller
 
     /**
      * Update an attendance record with audit logging.
-     * Admin edits time fields only — status and computed fields are recalculated automatically.
+     * Admin edits time fields only â€” status and computed fields are recalculated automatically.
      */
     public function updateRecord(Request $request, int $recordId)
     {
@@ -896,7 +1156,7 @@ class AttendanceController extends Controller
             'adjustment_reason'  => 'required|string|max:500',
         ]);
 
-        // Treat "00:00:00" as null — it is not a valid attendance time
+        // Treat "00:00:00" as null â€” it is not a valid attendance time
         $nullIfMidnight = fn(?string $t) => ($t === '00:00:00' || $t === '') ? null : $t;
 
         $timeInAm    = $nullIfMidnight($request->time_in_am);
@@ -922,7 +1182,7 @@ class AttendanceController extends Controller
             $schedule = $record->schedule;
             $date     = $record->attendance_date->format('Y-m-d');
 
-            // ── Recalculate all computed fields from the new times ────────────
+            // â”€â”€ Recalculate all computed fields from the new times â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             $lateAm    = 0;
             $latePm    = 0;
             $undertime = 0;
@@ -998,7 +1258,7 @@ class AttendanceController extends Controller
             }
             $status = implode(', ', $statuses);
 
-            // ── Build update payload ──────────────────────────────────────────
+            // â”€â”€ Build update payload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             $updateData = [
                 'time_in_am'       => $timeInAm,
                 'time_out_lunch'   => $timeOutLunch,
@@ -1016,7 +1276,7 @@ class AttendanceController extends Controller
                 'reviewed_at'      => now(),
             ];
 
-            // ── Audit trail ───────────────────────────────────────────────────
+            // â”€â”€ Audit trail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             $trackedFields = ['time_in_am', 'time_out_lunch', 'time_in_pm', 'time_out_pm', 'notes'];
             $changes = [];
             foreach ($trackedFields as $field) {
@@ -1110,6 +1370,75 @@ class AttendanceController extends Controller
     }
 
     /**
+     * Override overtime for an attendance record manually.
+     * Supports overnight overtime: start 20:00:00 on the record date, end 06:00:00 next day.
+     */
+    public function overrideOvertime(Request $request, int $recordId)
+    {
+        $request->validate([
+            'overtime_start'    => 'required|string|regex:/^\d{2}:\d{2}:\d{2}$/',
+            'overtime_end'      => 'required|string|regex:/^\d{2}:\d{2}:\d{2}$/',
+            'is_overnight'      => 'boolean',
+            'adjustment_reason' => 'required|string|min:3',
+        ]);
+
+        try {
+            $record = \App\Models\AttendanceRecord::findOrFail($recordId);
+            $date   = $record->attendance_date->format('Y-m-d');
+
+            $start       = \Carbon\Carbon::parse($date . ' ' . $request->overtime_start);
+            $isOvernight = (bool) ($request->is_overnight ?? false);
+
+            if ($isOvernight) {
+                $nextDay = $record->attendance_date->copy()->addDay()->format('Y-m-d');
+                $end     = \Carbon\Carbon::parse($nextDay . ' ' . $request->overtime_end);
+            } else {
+                $end = \Carbon\Carbon::parse($date . ' ' . $request->overtime_end);
+            }
+
+            if ($end->lte($start)) {
+                return response()->json(['error' => 'Overtime end must be after overtime start'], 422);
+            }
+
+            $overtimeMinutes = (int) $start->diffInMinutes($end);
+            $oldOvertime     = $record->overtime_minutes;
+
+            $record->update([
+                'overtime_minutes' => $overtimeMinutes,
+                'reviewed_by'      => auth()->id(),
+                'reviewed_at'      => now(),
+            ]);
+
+            \App\Models\AttendanceRecordChange::insert([
+                'attendance_record_id' => $record->id,
+                'field_name'           => 'overtime_minutes',
+                'old_value'            => (string) $oldOvertime,
+                'new_value'            => (string) $overtimeMinutes,
+                'reason'               => $request->adjustment_reason,
+                'changed_by'           => auth()->id(),
+                'created_at'           => now(),
+                'updated_at'           => now(),
+            ]);
+
+            $fresh = $record->fresh();
+
+            return response()->json([
+                'success'          => true,
+                'message'          => "Overtime overridden: {$overtimeMinutes} minutes",
+                'overtime_minutes' => $overtimeMinutes,
+                'record'           => array_merge($fresh->toArray(), [
+                    'attendance_date' => $fresh->attendance_date->format('Y-m-d'),
+                ]),
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Attendance record not found'], 404);
+        } catch (\Exception $e) {
+            \Log::error('Error overriding overtime', ['record_id' => $recordId, 'error' => $e->getMessage()]);
+            return response()->json(['error' => 'Error overriding overtime: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * Return raw attendance logs for a specific employee on a specific date.
      * Used by the inline edit row to show the original biometric entries.
      */
@@ -1145,7 +1474,7 @@ class AttendanceController extends Controller
 
         // After deleting the logs, remove any attendance_records whose date
         // no longer has ANY logs remaining (from any file) for that employee.
-        // Payroll records are intentionally NOT deleted — once payroll is generated
+        // Payroll records are intentionally NOT deleted â€” once payroll is generated
         // it is a financial record independent of the source attendance file.
         if ($meta?->date_from && $meta?->date_to) {
             $orphaned = \App\Models\AttendanceRecord::whereBetween('attendance_date', [$meta->date_from, $meta->date_to])
@@ -1173,7 +1502,7 @@ class AttendanceController extends Controller
 
     /**
      * Check if deleting a file would affect an already-generated payroll period.
-     * Returns a warning if overlap exists — used by the frontend before confirming delete.
+     * Returns a warning if overlap exists â€” used by the frontend before confirming delete.
      */
     public function checkDeleteImpact(string $sourceFile)
     {
@@ -1202,7 +1531,7 @@ class AttendanceController extends Controller
             'has_payroll' => $overlapping->isNotEmpty(),
             'periods' => $overlapping->map(fn($p) => [
                 'id'         => $p->id,
-                'department' => $p->department->name ?? '—',
+                'department' => $p->department->name ?? 'â€”',
                 'start_date' => $p->start_date,
                 'end_date'   => $p->end_date,
                 'status'     => $p->status,

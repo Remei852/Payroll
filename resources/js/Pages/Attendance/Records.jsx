@@ -228,7 +228,7 @@ function SundayAuthorizeModal({ records, employeeId, onClose, onAuthorized, isBu
     return (
         <>
             <div className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm" onClick={onClose} />
-            <div className="fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white shadow-2xl">
+            <div className="fixed left-1/2 top-1/2 z-[70] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-slate-200 bg-white shadow-2xl max-h-[90vh] flex flex-col">
                 <div className="flex items-start gap-3 border-b border-slate-200 px-6 py-4">
                     <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-indigo-100">
                         <svg className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -247,12 +247,13 @@ function SundayAuthorizeModal({ records, employeeId, onClose, onAuthorized, isBu
                     </div>
                 </div>
 
-                <form onSubmit={handleSubmit} className="px-6 py-4 space-y-4">
+                <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden">
+                    <div className="overflow-y-auto px-6 py-4 space-y-4">
                     {/* Affected dates (bulk) */}
                     {isBulk && (
                         <div className="rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2">
-                            <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 mb-1.5">Affected Dates</p>
-                            <div className="flex flex-wrap gap-1">
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-500 mb-1.5">Affected Dates ({dateLabels.length})</p>
+                            <div className="flex flex-wrap gap-1 max-h-28 overflow-y-auto pr-1">
                                 {dateLabels.map((d, i) => (
                                     <span key={i} className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">{d}</span>
                                 ))}
@@ -308,8 +309,9 @@ function SundayAuthorizeModal({ records, employeeId, onClose, onAuthorized, isBu
                     )}
 
                     {error && <p className="text-xs text-red-600">{error}</p>}
+                    </div>
 
-                    <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <div className="flex justify-end gap-2 px-6 py-4 border-t border-slate-100 bg-slate-50">
                         <button type="button" onClick={onClose}
                             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition">
                             Cancel
@@ -327,9 +329,196 @@ function SundayAuthorizeModal({ records, employeeId, onClose, onAuthorized, isBu
     );
 }
 
-// ─── Inline record edit row ───────────────────────────────────────────────────
-function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, historyOpen, onAuthorizeSunday }) {
-    const [editing, setEditing] = useState(false);
+// ─── Override Overtime Modal ──────────────────────────────────────────────────
+function OverrideOvertimeModal({ record, employeeName, onClose, onSave }) {
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState(null);
+    const [form, setForm] = useState({
+        overtime_start:    '20:00:00',
+        overtime_end:      '06:00:00',
+        is_overnight:      true,
+        adjustment_reason: '',
+    });
+
+    // Compute preview minutes
+    function previewMinutes() {
+        try {
+            const [sh, sm, ss] = form.overtime_start.split(':').map(Number);
+            const [eh, em, es] = form.overtime_end.split(':').map(Number);
+            const startSec = sh * 3600 + sm * 60 + (ss || 0);
+            let endSec = eh * 3600 + em * 60 + (es || 0);
+            if (form.is_overnight && endSec <= startSec) endSec += 86400;
+            const mins = Math.round((endSec - startSec) / 60);
+            return mins > 0 ? mins : null;
+        } catch { return null; }
+    }
+
+    function fmtPreview(mins) {
+        if (!mins) return '—';
+        const h = Math.floor(mins / 60);
+        const m = mins % 60;
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    async function handleSave() {
+        if (!form.adjustment_reason.trim()) {
+            setError('Adjustment reason is required.');
+            return;
+        }
+        const mins = previewMinutes();
+        if (!mins || mins <= 0) {
+            setError('Invalid overtime range — end must be after start.');
+            return;
+        }
+        setSaving(true);
+        setError(null);
+        try {
+            const res = await fetch(route('api.attendance.records.override-overtime', record.id), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content,
+                },
+                body: JSON.stringify({
+                    overtime_start:    form.overtime_start,
+                    overtime_end:      form.overtime_end,
+                    is_overnight:      form.is_overnight,
+                    adjustment_reason: form.adjustment_reason.trim(),
+                }),
+            });
+            const data = await res.json();
+            if (data.success) {
+                onSave(record.id, data.record);
+                onClose();
+            } else {
+                setError(data.error || 'Failed to save');
+            }
+        } catch {
+            setError('Network error');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    const mins = previewMinutes();
+
+    return (
+        <>
+            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+            <div className="fixed left-1/2 top-1/2 z-[60] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white shadow-2xl overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 bg-gradient-to-r from-amber-50 to-white">
+                    <div>
+                        <h3 className="text-base font-semibold text-slate-900">Override Overtime</h3>
+                        <p className="text-sm text-slate-600 mt-0.5">
+                            {employeeName} · {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        </p>
+                    </div>
+                    <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Body */}
+                <div className="px-5 py-4 space-y-4">
+                    {/* Overnight toggle */}
+                    <label className="flex items-center gap-3 cursor-pointer select-none">
+                        <div className="relative">
+                            <input type="checkbox" className="sr-only" checked={form.is_overnight}
+                                onChange={e => setForm(f => ({ ...f, is_overnight: e.target.checked }))} />
+                            <div className={`w-10 h-5 rounded-full transition ${form.is_overnight ? 'bg-amber-500' : 'bg-slate-300'}`} />
+                            <div className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${form.is_overnight ? 'translate-x-5' : ''}`} />
+                        </div>
+                        <span className="text-sm text-slate-700">Overnight shift (end time is next day)</span>
+                    </label>
+
+                    {/* Time range */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-700 uppercase tracking-wide">OT Start</label>
+                            <input type="text" inputMode="numeric" placeholder="HH:MM:SS"
+                                value={form.overtime_start}
+                                onChange={e => setForm(f => ({ ...f, overtime_start: e.target.value }))}
+                                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono text-center focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                            <p className="mt-1 text-[10px] text-slate-400">Same day as record</p>
+                        </div>
+                        <div>
+                            <label className="mb-1 block text-xs font-semibold text-slate-700 uppercase tracking-wide">OT End</label>
+                            <input type="text" inputMode="numeric" placeholder="HH:MM:SS"
+                                value={form.overtime_end}
+                                onChange={e => setForm(f => ({ ...f, overtime_end: e.target.value }))}
+                                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono text-center focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                            <p className="mt-1 text-[10px] text-slate-400">{form.is_overnight ? 'Next day' : 'Same day'}</p>
+                        </div>
+                    </div>
+
+                    {/* Preview */}
+                    <div className={`rounded-lg px-4 py-3 flex items-center justify-between text-sm ${mins ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50 border border-slate-200'}`}>
+                        <span className="text-slate-600">Overtime total</span>
+                        <span className={`font-semibold font-mono ${mins ? 'text-amber-700' : 'text-slate-400'}`}>
+                            {fmtPreview(mins)}{mins ? ` (${mins} min)` : ''}
+                        </span>
+                    </div>
+
+                    {/* Current OT */}
+                    {record.overtime_minutes > 0 && (
+                        <p className="text-xs text-slate-500">
+                            Current overtime: <span className="font-mono font-semibold text-slate-700">{fmtPreview(record.overtime_minutes)} ({record.overtime_minutes} min)</span>
+                        </p>
+                    )}
+
+                    {/* Reason */}
+                    <div>
+                        <label className="mb-1 block text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                            Reason <span className="text-red-500">*</span>
+                        </label>
+                        <textarea rows={2} required placeholder="e.g. Employee worked overnight shift approved by supervisor"
+                            value={form.adjustment_reason}
+                            onChange={e => setForm(f => ({ ...f, adjustment_reason: e.target.value }))}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-200 resize-none"
+                        />
+                        {error && (
+                            <p className="flex items-center gap-1.5 text-sm text-red-600 mt-1.5">
+                                <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                {error}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-5 py-3 bg-slate-50">
+                    <button onClick={onClose} className="rounded-md border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 transition">
+                        Cancel
+                    </button>
+                    <button onClick={handleSave} disabled={saving || !mins}
+                        className="inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition">
+                        {saving ? (
+                            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                        ) : (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                        )}
+                        {saving ? 'Saving…' : 'Save Overtime'}
+                    </button>
+                </div>
+            </div>
+        </>
+    );
+}
+
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+function EditRecordModal({ record, employeeCode, employeeName, onClose, onSave }) {
     const [saving, setSaving] = useState(false);
     const [rawLogs, setRawLogs] = useState(null);
     const [loadingLogs, setLoadingLogs] = useState(false);
@@ -342,17 +531,31 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
         adjustment_reason: '',
     });
     const [error, setError] = useState(null);
+    const [isDirty, setIsDirty] = useState(false);
 
-    function resetForm() {
-        setForm({
-            time_in_am:        record.time_in_am     || '',
-            time_out_lunch:    record.time_out_lunch  || '',
-            time_in_pm:        record.time_in_pm      || '',
-            time_out_pm:       record.time_out_pm     || '',
-            notes:             record.notes           || '',
-            adjustment_reason: '',
-        });
-        setError(null);
+    useEffect(() => {
+        if (employeeCode) {
+            setLoadingLogs(true);
+            fetch(route('api.attendance.logs.raw') + `?employee_code=${encodeURIComponent(employeeCode)}&date=${record.attendance_date}`)
+                .then(r => r.json())
+                .then(d => setRawLogs(d.logs || []))
+                .catch(() => setRawLogs([]))
+                .finally(() => setLoadingLogs(false));
+        }
+    }, [employeeCode, record.attendance_date]);
+
+    function handleChange(field, value) {
+        setForm(f => ({ ...f, [field]: value }));
+        setIsDirty(true);
+    }
+
+    function handleClose() {
+        if (isDirty) {
+            if (!confirm('You have unsaved changes. Are you sure you want to close?')) {
+                return;
+            }
+        }
+        onClose();
     }
 
     async function handleSave() {
@@ -381,9 +584,8 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
             });
             const data = await res.json();
             if (data.success) {
-                setEditing(false);
-                // Pass back the full fresh record so the row re-renders with recalculated values
                 onSave(record.id, data.record ?? payload);
+                onClose();
             } else {
                 setError(data.error || 'Failed to save');
             }
@@ -394,100 +596,230 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
         }
     }
 
+    return (
+        <>
+            {/* Overlay */}
+            <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={handleClose} />
+            
+            {/* Modal */}
+            <div className="fixed left-1/2 top-1/2 z-[60] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg border border-slate-200 bg-white shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 bg-gradient-to-r from-slate-50 to-white">
+                    <div>
+                        <h3 className="text-base font-semibold text-slate-900">Edit Attendance Record</h3>
+                        <p className="text-sm text-slate-600 mt-0.5">
+                            {employeeName} · {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                        </p>
+                    </div>
+                    <button onClick={handleClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition">
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+                    {/* Time Inputs */}
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold text-slate-700 uppercase tracking-wide">Time Entries</label>
+                        <div className="grid grid-cols-4 gap-3">
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">In AM</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="HH:MM:SS"
+                                    value={form.time_in_am}
+                                    onChange={e => handleChange('time_in_am', e.target.value)}
+                                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono text-center focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Out Lunch</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="HH:MM:SS"
+                                    value={form.time_out_lunch}
+                                    onChange={e => handleChange('time_out_lunch', e.target.value)}
+                                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono text-center focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">In PM</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="HH:MM:SS"
+                                    value={form.time_in_pm}
+                                    onChange={e => handleChange('time_in_pm', e.target.value)}
+                                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono text-center focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                />
+                            </div>
+                            <div>
+                                <label className="mb-1 block text-xs text-slate-600">Out PM</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    placeholder="HH:MM:SS"
+                                    value={form.time_out_pm}
+                                    onChange={e => handleChange('time_out_pm', e.target.value)}
+                                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono text-center focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Status Badges */}
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold text-slate-700 uppercase tracking-wide">Current Status</label>
+                        <div className="flex flex-wrap gap-1.5">
+                            {getStatusBadges(record.status)}
+                        </div>
+                    </div>
+
+                    {/* Raw Logs */}
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold text-slate-700 uppercase tracking-wide">Raw Biometric Logs</label>
+                        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            {loadingLogs ? (
+                                <div className="flex items-center gap-2 text-sm text-slate-400">
+                                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                    </svg>
+                                    Loading logs...
+                                </div>
+                            ) : !rawLogs || rawLogs.length === 0 ? (
+                                <p className="text-sm text-slate-400 italic">No raw logs found for this date.</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {rawLogs.map((log, i) => (
+                                        <span key={i} className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-mono font-semibold ${
+                                            log.type === 'IN'
+                                                ? 'bg-green-100 text-green-700 ring-1 ring-green-200'
+                                                : 'bg-orange-100 text-orange-700 ring-1 ring-orange-200'
+                                        }`}>
+                                            <span className={`text-xs font-bold uppercase ${log.type === 'IN' ? 'text-green-600' : 'text-orange-600'}`}>{log.type}</span>
+                                            {log.time}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Adjustment Reason */}
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                            Adjustment Reason <span className="text-red-500">*</span>
+                        </label>
+                        <textarea
+                            rows={3}
+                            required
+                            placeholder="Explain why this attendance record is being modified (e.g., biometric malfunction, forgot to clock in, etc.)"
+                            value={form.adjustment_reason}
+                            onChange={e => handleChange('adjustment_reason', e.target.value)}
+                            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 resize-none"
+                        />
+                        {error && (
+                            <p className="flex items-center gap-1.5 text-sm text-red-600 mt-2">
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                {error}
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4 bg-slate-50">
+                    <p className="text-xs text-slate-500 italic">
+                        Late, undertime, and overtime will be recalculated automatically
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button onClick={handleClose}
+                            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition">
+                            Cancel
+                        </button>
+                        <button onClick={handleSave} disabled={saving}
+                            className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition">
+                            {saving ? (
+                                <>
+                                    <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                                    </svg>
+                                    Saving...
+                                </>
+                            ) : (
+                                <>
+                                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/>
+                                    </svg>
+                                    Save Changes
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+}
+
+// ─── Inline record edit row ───────────────────────────────────────────────────
+function EditableRecordRow({ record, employeeCode, employeeName, onSave, onViewHistory, historyOpen, onAuthorizeSunday }) {
+    const [editing, setEditing] = useState(false);
+    const [overridingOT, setOverridingOT] = useState(false);
+    const [rawLogs, setRawLogs] = useState(null);
+    const [loadingLogs, setLoadingLogs] = useState(false);
+    const [showingLogs, setShowingLogs] = useState(false);
+
+    async function fetchRawLogs() {
+        if (!employeeCode) return;
+        setLoadingLogs(true);
+        try {
+            const res = await fetch(route('api.attendance.logs.raw') + `?employee_code=${encodeURIComponent(employeeCode)}&date=${record.attendance_date}`);
+            const data = await res.json();
+            setRawLogs(data.logs || []);
+        } catch {
+            setRawLogs([]);
+        } finally {
+            setLoadingLogs(false);
+        }
+    }
+
+    function toggleLogs() {
+        if (showingLogs) {
+            setShowingLogs(false);
+        } else {
+            if (!rawLogs) fetchRawLogs();
+            setShowingLogs(true);
+        }
+    }
+
+    function handleSaveFromModal(recordId, updatedFields) {
+        setEditing(false);
+        onSave(recordId, updatedFields);
+    }
+
     // Time input: accepts HH:MM:SS, shows placeholder when empty
     const timeInput = (field, label) => (
         <div className="flex flex-col gap-0.5">
-            <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wide">{label}</label>
+            <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wide">{label}</label>
             <input
                 type="text"
                 inputMode="numeric"
                 placeholder="HH:MM:SS"
                 value={form[field]}
                 onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
-                className="w-24 rounded border border-slate-300 px-2 py-1 text-xs font-mono focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]/20"
+                className="w-24 rounded-md border border-slate-300 px-2 py-1.5 text-xs font-mono focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-200 transition"
             />
         </div>
     );
-
-    if (editing) {
-        return (
-            <>
-                <tr className="bg-blue-50 text-xs border-b border-blue-100">
-                    <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">
-                        {new Date(record.attendance_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </td>
-                    {/* Time inputs */}
-                    <td className="px-2 py-2">{timeInput('time_in_am', 'In AM')}</td>
-                    <td className="px-2 py-2">{timeInput('time_out_lunch', 'Out Lunch')}</td>
-                    <td className="px-2 py-2">{timeInput('time_in_pm', 'In PM')}</td>
-                    <td className="px-2 py-2">{timeInput('time_out_pm', 'Out PM')}</td>
-                    {/* Computed columns — read-only while editing */}
-                    <td className="px-2 py-2 text-center text-slate-400 text-xs italic" colSpan={7}>
-                        Recalculated on save
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                            <button onClick={handleSave} disabled={saving}
-                                className="inline-flex items-center gap-1 rounded-md bg-[#1E3A8A] px-2.5 py-1 text-xs font-medium text-white hover:bg-[#1E3A8A]/90 disabled:opacity-50 transition">
-                                {saving
-                                    ? <><svg className="h-3 w-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>Saving</>
-                                    : <><svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7"/></svg>Save</>}
-                            </button>
-                            <button onClick={() => { setEditing(false); resetForm(); }}
-                                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition">
-                                Cancel
-                            </button>
-                        </div>
-                    </td>
-                </tr>
-                {/* Reason row */}
-                <tr className="bg-blue-50 border-b border-blue-200">
-                    <td colSpan={14} className="px-3 pb-3 pt-0">
-                        <div className="flex flex-col gap-1">
-                            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                                Adjustment Reason <span className="text-red-500">*</span>
-                            </label>
-                            <textarea
-                                rows={2}
-                                required
-                                placeholder="Describe why this record is being corrected…"
-                                value={form.adjustment_reason}
-                                onChange={e => setForm(f => ({ ...f, adjustment_reason: e.target.value }))}
-                                className="w-full rounded border border-slate-300 px-2 py-1.5 text-xs focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]/20 resize-none"
-                            />
-                            {error && <p className="text-xs text-red-600">{error}</p>}
-                        </div>
-                    </td>
-                </tr>
-                {/* Raw logs panel */}
-                <tr className="bg-slate-50 border-b border-blue-200">
-                    <td colSpan={14} className="px-3 pb-3 pt-1">
-                        <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
-                            Raw Biometric Logs — {record.attendance_date}
-                        </div>
-                        {loadingLogs ? (
-                            <p className="text-xs text-slate-400">Loading logs…</p>
-                        ) : !rawLogs || rawLogs.length === 0 ? (
-                            <p className="text-xs text-slate-400 italic">No raw logs found for this date.</p>
-                        ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                                {rawLogs.map((log, i) => (
-                                    <span key={i} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-mono font-semibold ${
-                                        log.type === 'IN'
-                                            ? 'bg-green-100 text-green-800'
-                                            : 'bg-orange-100 text-orange-800'
-                                    }`}>
-                                        <span className="text-[9px] font-bold opacity-60">{log.type}</span>
-                                        {log.time}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
-                    </td>
-                </tr>
-            </>
-        );
-    }
 
     const s = (record.status || '').toLowerCase();
     const isMissing   = record.missed_logs_count > 0;
@@ -498,6 +830,7 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
     const day         = dayName(record.attendance_date);
 
     return (
+        <>
         <tr className={`${rowBg(record)} text-xs transition-colors hover:brightness-95`}>
             <td className="whitespace-nowrap px-3 py-2 text-center">
                 <span className={`text-[10px] font-bold ${isSun ? 'text-indigo-500' : 'text-slate-400'}`}>{day}</span>
@@ -544,8 +877,10 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
                     {record.missed_logs_count}
                 </span>
             </td>
-            <td className="px-3 py-2">
-                <div className="flex flex-wrap gap-1">{getStatusBadges(record.status)}</div>
+            <td className="whitespace-nowrap px-3 py-2">
+                <div className="flex flex-wrap items-center gap-1">
+                    {getStatusBadges(record.status)}
+                </div>
             </td>
             <td className="px-3 py-2 sticky right-0 bg-inherit">
                 <div className="flex items-center gap-1 flex-wrap">
@@ -563,24 +898,24 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
                             Authorized
                         </span>
                     )}
-                    <button onClick={() => {
-                            setEditing(true);
-                            // Fetch raw logs for this date
-                            if (employeeCode && !rawLogs) {
-                                setLoadingLogs(true);
-                                fetch(route('api.attendance.logs.raw') + `?employee_code=${encodeURIComponent(employeeCode)}&date=${record.attendance_date}`)
-                                    .then(r => r.json())
-                                    .then(d => setRawLogs(d.logs || []))
-                                    .catch(() => setRawLogs([]))
-                                    .finally(() => setLoadingLogs(false));
-                            }
-                        }}
+                    <button onClick={() => setEditing(true)}
                         className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50 transition"
                         title={isMissing ? 'Edit logs' : 'Edit record'}>
                         <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                         {isMissing ? 'Edit Logs' : 'Edit'}
                     </button>
-                    {onViewHistory && (
+                    <button onClick={() => setOverridingOT(true)}
+                        className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-2 py-1 text-xs text-amber-700 hover:border-amber-400 hover:bg-amber-50 transition"
+                        title="Override overtime manually">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        OT
+                    </button>
+                    <button onClick={toggleLogs}
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition ${showingLogs ? 'border-slate-400 bg-slate-100 text-slate-700' : 'border-slate-200 text-slate-400 hover:border-slate-400 hover:text-slate-600'}`}
+                        title="View raw biometric logs">
+                        <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                    </button>
+                    {onViewHistory && record.changes_count > 0 && (
                         <button onClick={() => onViewHistory(record.id)}
                             className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition ${historyOpen ? 'border-slate-400 bg-slate-100 text-slate-700' : 'border-slate-200 text-slate-400 hover:border-slate-400 hover:text-slate-600'}`}
                             title="View change history">
@@ -590,6 +925,63 @@ function EditableRecordRow({ record, employeeCode, onSave, onViewHistory, histor
                 </div>
             </td>
         </tr>
+        {/* Raw logs row - shown when toggled */}
+        {showingLogs && (
+            <tr className="bg-slate-50 border-b border-slate-200">
+                <td colSpan={14} className="px-4 py-3">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 mb-2 flex items-center gap-2">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+                        Raw Biometric Logs — {record.attendance_date}
+                    </div>
+                    {loadingLogs ? (
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                            Loading logs…
+                        </div>
+                    ) : !rawLogs || rawLogs.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No raw logs found for this date.</p>
+                    ) : (
+                        <div className="flex flex-wrap gap-2">
+                            {rawLogs.map((log, i) => (
+                                <span key={i} className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-mono font-semibold shadow-sm ${
+                                    log.type === 'IN'
+                                        ? 'bg-green-100 text-green-800 ring-1 ring-green-200'
+                                        : 'bg-orange-100 text-orange-800 ring-1 ring-orange-200'
+                                }`}>
+                                    <span className={`inline-flex items-center justify-center rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                        log.type === 'IN' ? 'bg-green-200 text-green-900' : 'bg-orange-200 text-orange-900'
+                                    }`}>{log.type}</span>
+                                    {log.time}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </td>
+            </tr>
+        )}
+        {/* Edit Modal */}
+        {editing && (
+            <EditRecordModal
+                record={record}
+                employeeCode={employeeCode}
+                employeeName={employeeName}
+                onClose={() => setEditing(false)}
+                onSave={handleSaveFromModal}
+            />
+        )}
+        {/* Override Overtime Modal */}
+        {overridingOT && (
+            <OverrideOvertimeModal
+                record={record}
+                employeeName={employeeName}
+                onClose={() => setOverridingOT(false)}
+                onSave={handleSaveFromModal}
+            />
+        )}
+    </>
     );
 }
 
@@ -681,31 +1073,32 @@ function DetailModal({ employee, onClose, onRecordSave }) {
 
                 {/* 3. Table */}
                 <div className="overflow-auto flex-1">
-                    <table className="min-w-full text-left text-sm">
-                        <thead className="bg-[#1E3A8A] text-xs uppercase text-white sticky top-0 z-10">
+                    <table className="min-w-full text-left">
+                        <thead className="bg-gradient-to-r from-slate-50 to-slate-100 border-b-2 border-slate-200 sticky top-0 z-10">
                             <tr>
-                                <th className="px-3 py-2.5 font-medium text-center">Day</th>
-                                <th className="px-3 py-2.5 font-medium">Date</th>
-                                <th className="px-3 py-2.5 font-medium">In AM</th>
-                                <th className="px-3 py-2.5 font-medium">Out Lunch</th>
-                                <th className="px-3 py-2.5 font-medium">In PM</th>
-                                <th className="px-3 py-2.5 font-medium">Out PM</th>
-                                <th className="px-3 py-2.5 font-medium text-center" title="Late AM minutes">Late AM</th>
-                                <th className="px-3 py-2.5 font-medium text-center" title="Late PM minutes">Late PM</th>
-                                <th className="px-3 py-2.5 font-medium text-center" title="Total late minutes">Total Late</th>
-                                <th className="px-3 py-2.5 font-medium text-center" title="Undertime minutes">UT</th>
-                                <th className="px-3 py-2.5 font-medium text-center" title="Overtime minutes">OT</th>
-                                <th className="px-3 py-2.5 font-medium text-center" title="Number of missing attendance logs">Logs</th>
-                                <th className="px-3 py-2.5 font-medium">Status</th>
-                                <th className="px-3 py-2.5 font-medium sticky right-0 bg-[#1E3A8A]">Actions</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center">Day</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700">Date</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700">In AM</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700">Out Lunch</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700">In PM</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700">Out PM</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center" title="Late AM minutes">Late AM</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center" title="Late PM minutes">Late PM</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center" title="Total late minutes">Total Late</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center" title="Undertime minutes">UT</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center" title="Overtime minutes">OT</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 text-center" title="Number of missing attendance logs">Logs</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700">Status</th>
+                                <th className="px-4 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-700 sticky right-0 bg-gradient-to-r from-slate-50 to-slate-100">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
+                        <tbody className="divide-y divide-slate-100 bg-white">
                             {records.map(r => (
                                 <React.Fragment key={r.id}>
                                     <EditableRecordRow
                                         record={r}
                                         employeeCode={employee.employee_code}
+                                        employeeName={employee.employee_name}
                                         onSave={handleRecordSave}
                                         onViewHistory={viewHistory}
                                         historyOpen={historyRecordId === r.id}
@@ -787,16 +1180,16 @@ export default function AttendanceRecords() {
     const [filters, setFilters] = useState({ search: '', department: '', dateFrom: '', dateTo: '', status: '' });
 
     const [payrollForm, setPayrollForm] = useState({
-        department_id: departments.length === 1 ? String(departments[0].id) : '',
+        department_id: departments.length === 1 ? String(departments[0].id) : 'all',
         start_date: uploadedFiles[0]?.date_from || '',
         end_date: uploadedFiles[0]?.date_to || '',
         payroll_date: uploadedFiles[0]?.date_to || '',
     });
     const [generatingPayroll, setGeneratingPayroll] = useState(false);
     const [generatedPeriodId, setGeneratedPeriodId] = useState(null);
+    const [payrollGenProgress, setPayrollGenProgress] = useState(null); // { current, total, dept }
 
     const [showBulkSundayModal, setShowBulkSundayModal] = useState(false);
-    const [bulkPrintFormat, setBulkPrintFormat] = useState('pdf');
     const [bulkPaperSize, setBulkPaperSize]     = useState('A4');
 
     function selectFile(file) {
@@ -924,17 +1317,47 @@ export default function AttendanceRecords() {
     async function handleGeneratePayroll(e) {
         e.preventDefault();
         setGeneratingPayroll(true);
+        setPayrollGenProgress(null);
+
+        const deptIds = payrollForm.department_id === 'all'
+            ? departments.map(d => d.id)
+            : [payrollForm.department_id];
+
+        let lastPeriodId = null;
+        let anyFailed = false;
+
         try {
-            const res = await fetch(route('admin.payroll.process-generation'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 'X-Inertia': 'true' },
-                body: JSON.stringify(payrollForm),
-            });
-            const data = await res.json();
-            if (data.success) { setGeneratedPeriodId(data.period_id); showToast('success', data.message || 'Payroll generated'); }
-            else showToast('error', data.message || 'Failed to generate payroll');
-        } catch { showToast('error', 'Failed to generate payroll'); }
-        finally { setGeneratingPayroll(false); }
+            for (let i = 0; i < deptIds.length; i++) {
+                const dept = departments.find(d => String(d.id) === String(deptIds[i]));
+                setPayrollGenProgress({ current: i + 1, total: deptIds.length, dept: dept?.name ?? `Dept ${deptIds[i]}` });
+
+                const res = await fetch(route('admin.payroll.process-generation'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content, 'X-Inertia': 'true' },
+                    body: JSON.stringify({ ...payrollForm, department_id: deptIds[i] }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    lastPeriodId = data.period_id;
+                    if (deptIds.length === 1) showToast('success', data.message || 'Payroll generated');
+                } else {
+                    anyFailed = true;
+                    showToast('error', `${dept?.name ?? 'Dept'}: ${data.message || 'Failed to generate payroll'}`);
+                }
+            }
+
+            if (deptIds.length > 1) {
+                if (!anyFailed) showToast('success', `Payroll generated for all ${deptIds.length} departments`);
+                else showToast('error', 'Some departments failed — check above');
+            }
+
+            if (lastPeriodId) setGeneratedPeriodId(lastPeriodId);
+        } catch {
+            showToast('error', 'Failed to generate payroll');
+        } finally {
+            setGeneratingPayroll(false);
+            setPayrollGenProgress(null);
+        }
     }
 
     // Scope summary to the active file's date range so Review only shows the current period
@@ -1305,33 +1728,17 @@ export default function AttendanceRecords() {
                                 {reviewList.length > 0 && (
                                     <div className="flex items-center gap-1.5">
                                         <select
-                                            value={bulkPrintFormat}
-                                            onChange={e => setBulkPrintFormat(e.target.value)}
-                                            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:border-[#1E3A8A]"
+                                            value={bulkPaperSize}
+                                            onChange={e => setBulkPaperSize(e.target.value)}
+                                            className="rounded-lg border border-slate-300 bg-white px-5 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:border-[#1E3A8A]"
                                         >
-                                            <option value="pdf">PDF</option>
-                                            <option value="word">Word (.doc)</option>
+                                            <option value="A4">A4</option>
+                                            <option value="legal">Legal </option>
+                                            <option value="letter">Letter </option>
                                         </select>
-                                        {bulkPrintFormat === 'pdf' && (
-                                            <select
-                                                value={bulkPaperSize}
-                                                onChange={e => setBulkPaperSize(e.target.value)}
-                                                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none focus:border-[#1E3A8A]"
-                                            >
-                                                <option value="A4">A4</option>
-                                                <option value="legal">Legal (8.5×13")</option>
-                                                <option value="letter">Letter (8.5×11")</option>
-                                            </select>
-                                        )}
                                         <button
                                             onClick={() => {
                                                 const empIds = reviewList.map(e => e.employee_id);
-
-                                                if (bulkPrintFormat === 'word') {
-                                                    // Word: fetch data for each employee then generate client-side
-                                                    // For bulk, open PDF in new tab with word hint — server handles it
-                                                    // We reuse the PDF endpoint but trigger as download
-                                                }
 
                                                 const form = document.createElement('form');
                                                 form.method = 'POST';
@@ -1356,29 +1763,23 @@ export default function AttendanceRecords() {
                                                     dt.type = 'hidden'; dt.name = 'dateTo'; dt.value = activeFile.date_to;
                                                     form.appendChild(dt);
                                                 }
-                                                if (bulkPrintFormat === 'pdf') {
-                                                    const pv = document.createElement('input');
-                                                    pv.type = 'hidden'; pv.name = 'preview'; pv.value = '1';
-                                                    form.appendChild(pv);
-                                                    const ps = document.createElement('input');
-                                                    ps.type = 'hidden'; ps.name = 'paper_size'; ps.value = bulkPaperSize;
-                                                    form.appendChild(ps);
-                                                } else {
-                                                    const fmt = document.createElement('input');
-                                                    fmt.type = 'hidden'; fmt.name = 'format'; fmt.value = 'word';
-                                                    form.appendChild(fmt);
-                                                }
+                                                const pv = document.createElement('input');
+                                                pv.type = 'hidden'; pv.name = 'preview'; pv.value = '1';
+                                                form.appendChild(pv);
+                                                const ps = document.createElement('input');
+                                                ps.type = 'hidden'; ps.name = 'paper_size'; ps.value = bulkPaperSize;
+                                                form.appendChild(ps);
                                                 document.body.appendChild(form);
                                                 form.submit();
                                                 document.body.removeChild(form);
                                             }}
                                             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50"
-                                            title={`${bulkPrintFormat === 'word' ? 'Download Word' : 'Preview PDF'} violation letters for ${reviewList.length} filtered employee${reviewList.length !== 1 ? 's' : ''}`}
+                                            title={`Preview PDF violation letters for ${reviewList.length} filtered employee${reviewList.length !== 1 ? 's' : ''}`}
                                         >
                                             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                             </svg>
-                                            {bulkPrintFormat === 'word' ? 'Download Word' : `Print (${reviewList.length})`}
+                                            Print ({reviewList.length})
                                         </button>
                                     </div>
                                 )}
@@ -1399,59 +1800,88 @@ export default function AttendanceRecords() {
                             <p className="text-sm text-slate-400">No employees found.</p>
                         </div>
                     ) : (
-                        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm" style={{ maxHeight: '460px', overflowY: 'auto' }}>
-                            <table className="min-w-full text-left text-sm">
-                                <thead className="sticky top-0 bg-[#1E3A8A] text-xs uppercase text-white z-10">
-                                    <tr>
-                                        <th className="px-4 py-3 font-medium">Employee</th>
-                                        <th className="px-4 py-3 font-medium">Department</th>
-                                        <th className="px-4 py-3 font-medium text-center">Days</th>
-                                        <th className="px-4 py-3 font-medium text-center">Absent</th>
-                                        <th className="px-4 py-3 font-medium text-center">Late</th>
-                                        <th className="px-4 py-3 font-medium text-center">UT</th>
-                                        <th className="px-4 py-3 font-medium text-center">OT</th>
-                                        <th className="px-4 py-3 font-medium text-center">Logs</th>
-                                        <th className="px-4 py-3 font-medium text-center">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {reviewList.map(emp => (
-                                        <tr key={emp.employee_id} className={`${getRowColorClass(emp)} cursor-pointer transition-colors`} onClick={() => viewDetails(emp)}>
-                                            <td className="whitespace-nowrap px-4 py-3">
-                                                <div className="font-medium text-slate-900">{emp.employee_name}</div>
-                                                <div className="text-xs text-slate-400">{emp.employee_code}</div>
-                                            </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-slate-600">{emp.department}</td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center font-medium text-slate-700">{emp.total_workdays}</td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center">
-                                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${emp.total_absences > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{emp.total_absences}</span>
-                                            </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center">
-                                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${emp.total_late_minutes > 0 ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-500'}`}>{fmtTime(emp.total_late_minutes)}</span>
-                                            </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center text-slate-600 text-xs">{fmtTime(emp.total_undertime_minutes)}</td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center text-slate-600 text-xs">{fmtTime(emp.total_overtime_minutes)}</td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center">
-                                                <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${emp.total_missed_logs > 0 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{emp.total_missed_logs}</span>
-                                            </td>
-                                            <td className="whitespace-nowrap px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
-                                                <div className="flex items-center justify-center gap-1.5">
-                                                    <button onClick={() => viewDetails(emp)}
-                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-[#1E3A8A] hover:text-[#1E3A8A] hover:bg-blue-50 transition">
-                                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                                        View
-                                                    </button>
-                                                    <button onClick={() => { setSelectedEmployeeForLetter(emp.employee_id); setShowLetterModal(true); }}
-                                                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:border-green-400 hover:text-green-700 hover:bg-green-50 transition">
-                                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-                                                        Letter
-                                                    </button>
-                                                </div>
-                                            </td>
+                        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                            <div className="overflow-x-auto" style={{ maxHeight: '520px', overflowY: 'auto' }}>
+                                <table className="min-w-full text-left">
+                                    <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200">
+                                        <tr>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Employee</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">Department</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Days</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Absences</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Late</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Undertime</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Overtime</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Missing Logs</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Actions</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                        {reviewList.map(emp => (
+                                            <tr key={emp.employee_id} className={`${getRowColorClass(emp)} cursor-pointer transition-colors hover:bg-slate-50`} onClick={() => viewDetails(emp)}>
+                                                <td className="whitespace-nowrap px-4 py-3">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-500 text-xs font-semibold text-white">
+                                                            {emp.employee_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-medium text-slate-900 text-sm">{emp.employee_name}</div>
+                                                            <div className="text-xs text-slate-500 font-mono">{emp.employee_code}</div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3">
+                                                    <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                                                        {emp.department}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    <span className="text-sm font-semibold text-slate-900">{emp.total_workdays}</span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    <span className={`text-sm font-semibold ${emp.total_absences > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                                        {emp.total_absences}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    <span className={`text-sm font-semibold ${emp.total_late_minutes > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                                                        {fmtTime(emp.total_late_minutes)}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    <span className={`text-sm font-semibold ${emp.total_undertime_minutes > 0 ? 'text-purple-600' : 'text-slate-400'}`}>
+                                                        {fmtTime(emp.total_undertime_minutes)}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    <span className={`text-sm font-semibold ${emp.total_overtime_minutes > 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                                                        {fmtTime(emp.total_overtime_minutes)}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    <span className={`text-sm font-semibold ${emp.total_missed_logs > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                                        {emp.total_missed_logs}
+                                                    </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <button onClick={() => viewDetails(emp)}
+                                                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 transition">
+                                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                                                            View
+                                                        </button>
+                                                        <button onClick={() => { setSelectedEmployeeForLetter(emp.employee_id); setShowLetterModal(true); }}
+                                                            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-green-300 hover:bg-green-50 hover:text-green-700 transition">
+                                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                                                            Letter
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1482,9 +1912,12 @@ export default function AttendanceRecords() {
                                 <label className="mb-1 block text-xs font-medium text-slate-500">Department</label>
                                 <select required value={payrollForm.department_id} onChange={e => setPayrollForm(f => ({ ...f, department_id: e.target.value }))}
                                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]">
-                                    <option value="">Select Department</option>
+                                    <option value="all">All Departments</option>
                                     {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                                 </select>
+                                {payrollForm.department_id === 'all' && departments.length > 1 && (
+                                    <p className="mt-1 text-[10px] text-slate-400">Generates {departments.length} payroll periods</p>
+                                )}
                             </div>
                             <div>
                                 <label className="mb-1 block text-xs font-medium text-slate-500">Start Date</label>
@@ -1503,11 +1936,17 @@ export default function AttendanceRecords() {
                             </div>
                         </div>
                         <div className="mt-5 flex items-center justify-end border-t border-slate-100 pt-4">
+                            {payrollGenProgress && (
+                                <p className="mr-auto text-xs text-slate-500">
+                                    Generating {payrollGenProgress.dept} ({payrollGenProgress.current}/{payrollGenProgress.total})…
+                                </p>
+                            )}
                             <button type="submit" disabled={generatingPayroll}
                                 className="inline-flex items-center gap-2 rounded-lg bg-[#1E3A8A] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#1E3A8A]/90 disabled:opacity-50 transition shadow-sm">
                                 {generatingPayroll
-                                    ? <><Spinner cls="h-4 w-4" />Generating…</>
-                                    : <><svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>Generate Payroll</>}
+                                    ? <><Spinner cls="h-4 w-4" />{payrollGenProgress ? `${payrollGenProgress.current}/${payrollGenProgress.total} Generating…` : 'Generating…'}</>
+                                    : <><svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                    {payrollForm.department_id === 'all' && departments.length > 1 ? `Generate All (${departments.length})` : 'Generate Payroll'}</>}
                             </button>
                         </div>
                     </form>

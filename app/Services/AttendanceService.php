@@ -300,8 +300,8 @@ class AttendanceService
         // Calculate flags - use time slot based times
         $isLateAM = $this->isLate($firstIn, $schedule);
         $isLatePM = $this->isLatePM($timeSlots['lunch_in'], $schedule);
-        $isUndertime = $this->isUndertime($lastOut, $schedule);
-        $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'], $schedule);
+        $isUndertime = $this->isUndertime($lastOut, $schedule, $date);
+        $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'], $schedule, $date);
         $hasIncompleteLogs = $this->hasIncompleteLogs($inferredLogs);
         $hasDuplicates = count($logs) !== count($uniqueLogs);
 
@@ -314,8 +314,8 @@ class AttendanceService
         $overtimeMinutes = $this->calculateOvertimeMinutes($lastOut, $schedule);
         
         // Calculate undertime minutes (afternoon out + early lunch out combined)
-        $undertimeMinutes = $this->calculateUndertimeMinutes($lastOut, $schedule)
-                          + $this->calculateEarlyLunchOutMinutes($timeSlots['lunch_out'], $schedule);
+        $undertimeMinutes = $this->calculateUndertimeMinutes($lastOut, $schedule, $date)
+                          + $this->calculateEarlyLunchOutMinutes($timeSlots['lunch_out'], $schedule, $date);
 
         // Count missed logs (only if not absent)
         $missedLogsCount = $this->countMissedLogs($timeSlots, $pairs, $schedule);
@@ -333,7 +333,8 @@ class AttendanceService
             $isWorkingDay,
             $holiday,
             $override,
-            $timeSlots
+            $timeSlots,
+            $date
         );
 
         // Calculate workday rendered based on status
@@ -978,7 +979,8 @@ class AttendanceService
         bool $isWorkingDay,
         $holiday = null,
         $override = null,
-        array $timeSlots = []
+        array $timeSlots = [],
+        $date = null
     ): string {
         $statuses = [];
 
@@ -1063,8 +1065,8 @@ class AttendanceService
         }
 
         // Priority 4: UNDERTIME (only if not absent)
-        $isUndertime = $this->isUndertime($lastOut, $schedule);
-        $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'] ?? null, $schedule);
+        $isUndertime = $this->isUndertime($lastOut, $schedule, $date);
+        $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'] ?? null, $schedule, $date);
         if ($isUndertime || $isEarlyLunchOut) {
             $statuses[] = 'Undertime';
         }
@@ -1211,15 +1213,19 @@ class AttendanceService
      * Check if employee has undertime on afternoon out.
      * Uses schedule's undertime_enabled and undertime_allowance_minutes.
      */
-    private function isUndertime(?string $lastOut, WorkSchedule $schedule): bool
+    private function isUndertime(?string $lastOut, WorkSchedule $schedule, $date): bool
     {
         if (!$lastOut) return false;
         if ($schedule->undertime_enabled === false) return false;
 
-        $today     = Carbon::today();
-        $endTime   = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
+        // Ensure $date is a Carbon instance
+        if (!($date instanceof Carbon)) {
+            $date = Carbon::parse($date);
+        }
+
+        $endTime   = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->work_end_time);
         $allowance = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
-        $actualOut = Carbon::parse($today->format('Y-m-d') . ' ' . $lastOut);
+        $actualOut = Carbon::parse($date->format('Y-m-d') . ' ' . $lastOut);
 
         return $actualOut->lt($endTime->copy()->subMinutes($allowance));
     }
@@ -1227,16 +1233,20 @@ class AttendanceService
     /**
      * Check if employee left early for lunch (before break_start_time - allowance).
      */
-    private function isEarlyLunchOut(?string $lunchOut, WorkSchedule $schedule): bool
+    private function isEarlyLunchOut(?string $lunchOut, WorkSchedule $schedule, $date): bool
     {
         if (!$lunchOut) return false;
         if ($schedule->undertime_enabled === false) return false;
         if (!$schedule->break_start_time) return false;
 
-        $today      = Carbon::today();
-        $breakStart = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_start_time);
+        // Ensure $date is a Carbon instance
+        if (!($date instanceof Carbon)) {
+            $date = Carbon::parse($date);
+        }
+
+        $breakStart = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->break_start_time);
         $allowance  = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
-        $actualOut  = Carbon::parse($today->format('Y-m-d') . ' ' . $lunchOut);
+        $actualOut  = Carbon::parse($date->format('Y-m-d') . ' ' . $lunchOut);
 
         return $actualOut->lt($breakStart->copy()->subMinutes($allowance));
     }
@@ -1244,18 +1254,25 @@ class AttendanceService
     /**
      * Calculate undertime minutes from scheduled end time.
      */
-    private function calculateUndertimeMinutes(?string $lastOut, WorkSchedule $schedule): int
+    private function calculateUndertimeMinutes(?string $lastOut, WorkSchedule $schedule, $date): int
     {
         if (!$lastOut) return 0;
         if ($schedule->undertime_enabled === false) return 0;
 
-        $today     = Carbon::today();
-        $endTime   = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_end_time);
-        $allowance = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
-        $actualOut = Carbon::parse($today->format('Y-m-d') . ' ' . $lastOut);
+        // Ensure $date is a Carbon instance
+        if (!($date instanceof Carbon)) {
+            $date = Carbon::parse($date);
+        }
 
+        $endTime   = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->work_end_time);
+        $allowance = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
+        $actualOut = Carbon::parse($date->format('Y-m-d') . ' ' . $lastOut);
+
+        // Only penalize if they left before the grace period ends
         if ($actualOut->lt($endTime->copy()->subMinutes($allowance))) {
-            return max(0, (int) $endTime->diffInMinutes($actualOut));
+            // Calculate difference in seconds, then convert to minutes
+            $diffSeconds = $endTime->timestamp - $actualOut->timestamp;
+            return max(0, (int) floor($diffSeconds / 60));
         }
 
         return 0;
@@ -1264,19 +1281,26 @@ class AttendanceService
     /**
      * Calculate early lunch-out undertime minutes (left before break_start_time - allowance).
      */
-    private function calculateEarlyLunchOutMinutes(?string $lunchOut, WorkSchedule $schedule): int
+    private function calculateEarlyLunchOutMinutes(?string $lunchOut, WorkSchedule $schedule, $date): int
     {
         if (!$lunchOut) return 0;
         if ($schedule->undertime_enabled === false) return 0;
         if (!$schedule->break_start_time) return 0;
 
-        $today      = Carbon::today();
-        $breakStart = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_start_time);
-        $allowance  = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
-        $actualOut  = Carbon::parse($today->format('Y-m-d') . ' ' . $lunchOut);
+        // Ensure $date is a Carbon instance
+        if (!($date instanceof Carbon)) {
+            $date = Carbon::parse($date);
+        }
 
+        $breakStart = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->break_start_time);
+        $allowance  = $schedule->undertime_allowance_minutes ?? self::EARLY_OUT_ALLOWANCE_MINUTES;
+        $actualOut  = Carbon::parse($date->format('Y-m-d') . ' ' . $lunchOut);
+
+        // Only penalize if they left before the grace period ends
         if ($actualOut->lt($breakStart->copy()->subMinutes($allowance))) {
-            return max(0, (int) $breakStart->diffInMinutes($actualOut));
+            // Calculate difference in seconds, then convert to minutes
+            $diffSeconds = $breakStart->timestamp - $actualOut->timestamp;
+            return max(0, (int) floor($diffSeconds / 60));
         }
 
         return 0;
@@ -1864,6 +1888,7 @@ class AttendanceService
     public function getAttendanceSummary(): array
     {
         $records = AttendanceRecord::with(['employee.department'])
+            ->withCount('changes')
             ->get()
             ->groupBy('employee_id');
 
@@ -1930,6 +1955,7 @@ class AttendanceService
                         'rendered' => $record->rendered,
                         'status' => $record->status ?? 'Unknown',
                         'missed_logs_count' => $record->missed_logs_count,
+                        'changes_count' => $record->changes_count ?? 0,
                     ];
                 })->values()->toArray(),
             ];

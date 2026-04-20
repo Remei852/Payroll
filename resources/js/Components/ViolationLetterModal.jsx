@@ -479,8 +479,8 @@ ${v.undertime?.length>0?`
                                 className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 focus:outline-none"
                             >
                                 <option value="A4">A4</option>
-                                <option value="legal">Legal (8.5×13")</option>
-                                <option value="letter">Letter (8.5×11")</option>
+                                <option value="legal">Legal </option>
+                                <option value="letter">Letter </option>
                             </select>
                         )}
                         <button onClick={handleDownload} disabled={downloading || loading || !!error}
