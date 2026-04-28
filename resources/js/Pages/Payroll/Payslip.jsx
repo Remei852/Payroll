@@ -254,29 +254,8 @@ export default function Payslip({ payroll, summary }) {
                     </div>
                 </div>
 
-                {/* Cash Advance Remaining Balance Note */}
-                {totalCashAdvanceDeductions > 0 && (
-                    <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                        <div className="flex items-start gap-3">
-                            <div className="text-2xl flex-shrink-0">💰</div>
-                            <div>
-                                <h3 className="font-semibold text-amber-900">Cash Advance Deduction</h3>
-                                <p className="text-sm text-amber-800 mt-1">
-                                    Total cash advance deducted in this period: <span className="font-bold">{formatCurrency(totalCashAdvanceDeductions)}</span>
-                                </p>
-                                {payroll.employee.cash_advances_remaining_balance > 0 && (
-                                    <p className="text-sm text-amber-800 mt-2">
-                                        Remaining unpaid balance: <span className="font-bold">{formatCurrency(payroll.employee.cash_advances_remaining_balance)}</span>
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
-
                 {/* Footer */}
                 <div className="border-t border-slate-200 pt-4 text-center text-xs text-slate-500">
-                    <p>This is a computer-generated payslip. No signature is required.</p>
                     <p className="mt-1">Generated on {new Date(payroll.generated_at).toLocaleString('en-US')}</p>
                     <p className="mt-2 text-slate-400">Page 1 / 1</p>
                 </div>

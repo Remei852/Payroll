@@ -12,7 +12,7 @@ const fmtMin = (m) => {
 
 // ─── Add Cash Advance modal ───────────────────────────────────────────────────
 function AddAdvanceModal({ employees, onClose, onSave }) {
-    const [form, setForm] = useState({ employee_id: '', amount: '', reason: '' });
+    const [form, setForm] = useState({ employee_id: '', amount: '', reason: '', deduct_on: '' });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
@@ -24,7 +24,11 @@ function AddAdvanceModal({ employees, onClose, onSave }) {
             const res = await fetch(`/api/employees/${form.employee_id}/cash-advances`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
-                body: JSON.stringify({ amount: parseFloat(form.amount), reason: form.reason || null }),
+                body: JSON.stringify({
+                    amount: parseFloat(form.amount),
+                    reason: form.reason || null,
+                    deduct_on: form.deduct_on || null,
+                }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.message || 'Failed');
@@ -66,6 +70,15 @@ function AddAdvanceModal({ employees, onClose, onSave }) {
                             onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
                     </div>
+                    <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">
+                            Deduct On <span className="text-slate-400">(leave blank to deduct this period)</span>
+                        </label>
+                        <input type="date" value={form.deduct_on}
+                            onChange={e => setForm(f => ({ ...f, deduct_on: e.target.value }))}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
+                        <p className="mt-1 text-xs text-slate-400">Set a date in the next payroll period to defer the deduction.</p>
+                    </div>
                     {error && <p className="text-xs text-red-600">{error}</p>}
                     <div className="flex justify-end gap-2 pt-1">
                         <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
@@ -91,7 +104,8 @@ function EmployeeRow({ payroll, periodStatus, isClosed, isSelected, onToggleSele
     const penalties   = deductions.filter(i => i.category.includes('Penalty'));
     const contribs    = deductions.filter(i => !i.category.includes('Penalty') && i.category !== 'Cash Advance');
     const caDeductions = deductions.filter(i => i.category === 'Cash Advance');
-    const activeAdvances = payroll.employee.cash_advances ?? [];
+    // Only show advances that are still Active (not yet deducted) — deducted ones show via caDeductions
+    const activeAdvances = (payroll.employee.cash_advances ?? []).filter(a => a.status === 'Active');
     const att = payroll.attendance_summary ?? {};
 
     async function applyAdvance(advanceId) {
@@ -253,6 +267,9 @@ function EmployeeRow({ payroll, periodStatus, isClosed, isSelected, onToggleSele
                                                 <div>
                                                     <p className="text-xs font-semibold text-amber-800">{php(adv.amount)}</p>
                                                     {adv.reason && <p className="text-xs text-amber-600">{adv.reason}</p>}
+                                                    {adv.deduct_on && (
+                                                        <p className="text-xs text-amber-500">Deduct on: {new Date(adv.deduct_on).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                                                    )}
                                                 </div>
                                                 {periodStatus === 'OPEN' && (
                                                     <div className="flex gap-1">

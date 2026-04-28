@@ -3,6 +3,7 @@ import { Head } from '@inertiajs/react';
 import { useState } from 'react';
 import WorkSchedulesTab from './Tabs/WorkSchedulesTab';
 import ScheduleOverridesTab from './Tabs/ScheduleOverridesTab';
+import AccountTab from './Tabs/AccountTab';
 
 const tabs = [
     {
@@ -22,6 +23,16 @@ const tabs = [
         icon: (
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+        ),
+    },
+    {
+        id: 'account',
+        label: 'Account',
+        description: 'Update your email and password',
+        icon: (
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
         ),
     },
@@ -76,6 +87,9 @@ export default function Settings({ workSchedules = [], scheduleOverrides = [], d
                 )}
                 {activeTab === 'schedule-overrides' && (
                     <ScheduleOverridesTab scheduleOverrides={scheduleOverrides} departments={departments} workSchedules={workSchedules} flash={flash} />
+                )}
+                {activeTab === 'account' && (
+                    <AccountTab />
                 )}
             </div>
         </AdminLayout>

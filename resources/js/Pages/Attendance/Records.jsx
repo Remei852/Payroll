@@ -1636,34 +1636,6 @@ export default function AttendanceRecords() {
                                     {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
                                 </select>
                             </div>
-                            <div className="flex-1">
-                                <label className="mb-1 block text-xs font-medium text-slate-500">Status</label>
-                                <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]">
-                                    <option value="">All Statuses</option>
-                                    <option value="Present">Present</option>
-                                    <option value="Absent">Absent</option>
-                                    <option value="Late">Late</option>
-                                    <option value="Undertime">Undertime</option>
-                                    <option value="Missed Log">Missed Log</option>
-                                    <option value="Half Day">Half Day</option>
-                                    <option value="No Work">No Work</option>
-                                    <option value="Sunday Work">Sunday Work</option>
-                                    <option value="Unauthorized Work">Unauthorized Work</option>
-                                    <option value="Holiday">Holiday</option>
-                                    <option value="Holiday Work">Holiday Work</option>
-                                </select>
-                            </div>
-                            <div className="flex-1">
-                                <label className="mb-1 block text-xs font-medium text-slate-500">Date From</label>
-                                <input type="date" value={filters.dateFrom} onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
-                            </div>
-                            <div className="flex-1">
-                                <label className="mb-1 block text-xs font-medium text-slate-500">Date To</label>
-                                <input type="date" value={filters.dateTo} onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
-                                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
-                            </div>
                         </div>
 
                         {/* Stats + toggle */}

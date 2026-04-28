@@ -1,10 +1,61 @@
 {
-    "$schema": "https://www.schemastore.org/package.json",
+    "name": "payroll-system",
+    "version": "1.0.0",
+    "description": "Payroll Management System",
+    "author": "JCT",
     "private": true,
     "type": "module",
+    "main": "electron/main.js",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "electron": "electron .",
+        "dist": "powershell -ExecutionPolicy Bypass -File build-electron.ps1"
+    },
+    "build": {
+        "appId": "com.payroll.app",
+        "productName": "Payroll System",
+        "directories": {
+            "output": "dist-electron",
+            "buildResources": "build-resources"
+        },
+        "files": [
+            "electron/**/*",
+            "package.json"
+        ],
+        "extraResources": [
+            {
+                "from": "resources-php",
+                "to": "php"
+            },
+            {
+                "from": ".",
+                "to": "laravel",
+                "filter": [
+                    "app/**/*",
+                    "bootstrap/**/*",
+                    "config/**/*",
+                    "database/**/*",
+                    "public/**/*",
+                    "resources/views/**/*",
+                    "routes/**/*",
+                    "storage/**/*",
+                    "vendor/**/*",
+                    "artisan",
+                    "composer.json",
+                    ".env"
+                ]
+            }
+        ],
+        "win": {
+            "target": "nsis"
+        },
+        "nsis": {
+            "oneClick": true,
+            "perMachine": false,
+            "allowToChangeInstallationDirectory": false,
+            "include": "build-resources/installer.nsh"
+        }
     },
     "devDependencies": {
         "@headlessui/react": "^2.0.0",
@@ -16,6 +67,8 @@
         "autoprefixer": "^10.4.12",
         "axios": "^1.11.0",
         "concurrently": "^9.0.1",
+        "electron": "^36.1.0",
+        "electron-builder": "^26.0.12",
         "laravel-vite-plugin": "^2.0.0",
         "postcss": "^8.4.31",
         "react": "^18.2.0",

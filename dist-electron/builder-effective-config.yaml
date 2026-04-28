@@ -1,0 +1,34 @@
+directories:
+  output: dist-electron
+  buildResources: build-resources
+appId: com.payroll.app
+productName: Payroll System
+files:
+  - filter:
+      - electron/**/*
+      - package.json
+extraResources:
+  - from: resources-php
+    to: php
+  - to: laravel
+    filter:
+      - app/**/*
+      - bootstrap/**/*
+      - config/**/*
+      - database/**/*
+      - public/**/*
+      - resources/views/**/*
+      - routes/**/*
+      - storage/**/*
+      - vendor/**/*
+      - artisan
+      - composer.json
+      - .env
+win:
+  target: nsis
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  include: build-resources/installer.nsh
+electronVersion: 41.2.1

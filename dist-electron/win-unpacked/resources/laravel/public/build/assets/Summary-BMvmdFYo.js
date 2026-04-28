@@ -1,0 +1,1 @@
+import{j as t,H as e}from"./app-i7-6dvRw.js";import{A as a}from"./AdminLayout-C3O9kx-A.js";function r(){return t.jsxs(a,{title:"Attendance Summary",children:[t.jsx(e,{title:"Attendance Summary"}),t.jsx("div",{className:"text-sm text-slate-600",children:"Empty page"})]})}export{r as default};

@@ -281,13 +281,21 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
         if (dateFilters?.dateFrom) params.append('dateFrom', dateFilters.dateFrom);
         if (dateFilters?.dateTo)   params.append('dateTo',   dateFilters.dateTo);
 
-        axios.get(`/employees/${employeeId}/violation-letter/data?${params}`)
+        const baseUrl = window.location.origin;
+        axios.get(`${baseUrl}/employees/${employeeId}/violation-letter/data?${params}`)
             .then(res => {
                 setData(res.data);
                 setDefaults(res.data.defaults);
                 setContent({ ...res.data.defaults });
             })
-            .catch(err => setError(err.response?.data?.error || 'Failed to load letter data'))
+            .catch(err => {
+                const msg = err.response?.data?.error
+                    || err.response?.data?.message
+                    || err.message
+                    || 'Failed to load letter data';
+                console.error('ViolationLetterModal fetch error:', err.response?.status, msg);
+                setError(msg);
+            })
             .finally(() => setLoading(false));
     }, [isOpen, employeeId, dateFilters]);
 
