@@ -29,24 +29,25 @@ let mainWindow = null;
 function ensurePhpIni() {
     if (!isProd) return null;
     const iniPath = path.join(app.getPath('userData'), 'php.ini');
-    if (fs.existsSync(iniPath)) return iniPath;
 
-    const extDir = path.join(phpRoot, 'ext').replace(/\\/g, '\\\\');
+    // Always rewrite so ext path is always correct
+    const extDir = path.join(phpRoot, 'ext').replace(/\\/g, '/');
     const content =
         `extension_dir = "${extDir}"\n` +
+        `\n` +
+        `; Only load extensions that exist as separate DLLs\n` +
         `extension=openssl\n` +
         `extension=pdo_sqlite\n` +
         `extension=sqlite3\n` +
         `extension=mbstring\n` +
         `extension=fileinfo\n` +
         `extension=curl\n` +
-        `extension=dom\n` +
-        `extension=xml\n` +
-        `extension=bcmath\n` +
-        `extension=ctype\n` +
-        `extension=phar\n` +
-        `extension=iconv\n` +
-        `extension=tokenizer\n` +
+        `extension=intl\n` +
+        `extension=sodium\n` +
+        `\n` +
+        `; dom, xml, bcmath, ctype, phar, iconv, tokenizer, json\n` +
+        `; are built-in to php8ts.dll — do NOT list them here\n` +
+        `\n` +
         `memory_limit = 256M\n` +
         `max_execution_time = 60\n` +
         `date.timezone = Asia/Manila\n`;

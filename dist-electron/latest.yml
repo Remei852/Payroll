@@ -1,8 +1,8 @@
 version: 1.0.0
 files:
   - url: Payroll-System-Setup-1.0.0.exe
-    sha512: EbZwsTFU3nyY+y8tF64KvrQb79FZoMX3t4q9fVCfnZZaojIfs6lEtolBp2+ypPHWU7s5ODrbPTC4qwctN0BY+A==
-    size: 179368351
+    sha512: zjKJrqJeYJKL85ZVJnHAuN33Ek2ZYv2+tm+pIT33Y/C8k4CcjauPlg/lnZcpPkEW72OdSz2z39Om6c82drUNIg==
+    size: 179368311
 path: Payroll-System-Setup-1.0.0.exe
-sha512: EbZwsTFU3nyY+y8tF64KvrQb79FZoMX3t4q9fVCfnZZaojIfs6lEtolBp2+ypPHWU7s5ODrbPTC4qwctN0BY+A==
-releaseDate: '2026-04-28T00:56:59.948Z'
+sha512: zjKJrqJeYJKL85ZVJnHAuN33Ek2ZYv2+tm+pIT33Y/C8k4CcjauPlg/lnZcpPkEW72OdSz2z39Om6c82drUNIg==
+releaseDate: '2026-04-28T01:22:40.615Z'

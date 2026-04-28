@@ -93,7 +93,7 @@ nsis:
 
     !addincludedir "C:\xampp\htdocs\Payrolll\Payroll\build-resources"
     !include "C:\xampp\htdocs\Payrolll\Payroll\build-resources\installer.nsh"
-    !include "C:\Users\geff1\AppData\Local\Temp\t-o3PJld\2-messages.nsh"
+    !include "C:\Users\geff1\AppData\Local\Temp\t-b0Kf2w\2-messages.nsh"
     !addplugindir /x86-unicode "C:\Users\geff1\AppData\Local\electron-builder\Cache\nsis\nsis-resources-3.4.1-nsis-resources-3.4.1\plugins\x86-unicode"
 
     Var newStartMenuLink
