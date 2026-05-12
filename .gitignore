@@ -22,3 +22,16 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Electron / desktop build artifacts
+/build-electron.ps1
+/dist-electron
+/dist-electron.7z
+/build-resources/
+/resources-php/
+/BUILD_README.md
+/ELECTRON_TROUBLESHOOTING.md
+/FIXES_FOR_500_ERROR.md
+/QUICK_START.md
+/check-logs.ps1
+/holidays_backup.json
