@@ -33,7 +33,9 @@
                 "to": "laravel",
                 "filter": [
                     "app/**/*",
-                    "bootstrap/**/*",
+                    "bootstrap/app.php",
+                    "bootstrap/providers.php",
+                    "bootstrap/cache/.gitignore",
                     "config/**/*",
                     "database/**/*",
                     "public/**/*",
@@ -48,12 +50,19 @@
             }
         ],
         "win": {
-            "target": "nsis"
+            "target": [
+                {
+                    "target": "nsis",
+                    "arch": ["x64"]
+                }
+            ],
+            "requestedExecutionLevel": "asInvoker"
         },
         "nsis": {
             "oneClick": true,
             "perMachine": false,
             "allowToChangeInstallationDirectory": false,
+            "deleteAppDataOnUninstall": false,
             "include": "build-resources/installer.nsh"
         }
     },

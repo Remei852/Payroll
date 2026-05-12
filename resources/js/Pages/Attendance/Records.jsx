@@ -15,6 +15,11 @@ function fmtTime(min) {
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
 }
 
+function calcGraceUsedMinutes(records) {
+    if (!records || records.length === 0) return 0;
+    return records.reduce((sum, r) => sum + Math.max(0, Number(r.total_late_minutes) || 0), 0);
+}
+
 /** Stored "HH:MM:SS" → display "HH:MM:SS", or "—" if null/midnight */
 function fmtClock(t) {
     if (!t || t === '00:00:00') return '—';
@@ -92,6 +97,8 @@ const STATUS_BADGE_MAP = {
     'Late':                             'bg-yellow-100 text-yellow-700',
     'Undertime':                        'bg-purple-100 text-purple-700',
     'Half Day':                         'bg-orange-100 text-orange-700',
+    'Half Day AM':                      'bg-orange-100 text-orange-700',
+    'Half Day PM':                      'bg-orange-100 text-orange-700',
     'Absent':                           'bg-red-100 text-red-700',
     'Absent - Holiday':                 'bg-slate-100 text-slate-600',
     'Absent - Holiday Pay':             'bg-slate-100 text-slate-600',
@@ -105,7 +112,7 @@ function getStatusBadges(status) {
     // Sort tokens: day-type first, then issues, then present
     const ORDER = [
         'Sunday Work','Present - Sunday Work','Present - Holiday','Present - Special Circumstances',
-        'Present - Unauthorized Work Day','Missed Log','Late','Undertime','Half Day',
+        'Present - Unauthorized Work Day','Missed Log','Late','Undertime','Half Day','Half Day AM','Half Day PM',
         'Absent','Absent - Holiday','Absent - Holiday Pay','Absent - Excused','Present',
     ];
     const tokens = status.split(',').map(s => s.trim());
@@ -1191,6 +1198,7 @@ export default function AttendanceRecords() {
 
     const [showBulkSundayModal, setShowBulkSundayModal] = useState(false);
     const [bulkPaperSize, setBulkPaperSize]     = useState('A4');
+    const [summaryDropdownOpen, setSummaryDropdownOpen] = useState(false);
 
     function selectFile(file) {
         setActiveFile(file);
@@ -1369,17 +1377,58 @@ export default function AttendanceRecords() {
                     r.attendance_date <= activeFile.date_to
                 );
                 if (recs.length === 0) return null;
+
+                const graceEnabled = !!e.cumulative_tracking_enabled;
+                const graceBankLimitMinutes = Number(e.grace_period_limit_minutes) || 0;
+                const dailyGraceMinutes = Number(e.daily_grace_minutes) || 15;
+                const maxUsages = Math.floor(graceBankLimitMinutes / dailyGraceMinutes);
+                
+                const rawLateMinutes = recs.reduce((s, r) => s + (r.total_late_minutes || 0), 0);
+                
+                let graceUsedMinutes = 0;
+                let adjustedLateMinutes = 0;
+                let usagesCount = 0;
+                
+                if (graceEnabled && graceBankLimitMinutes > 0 && dailyGraceMinutes > 0) {
+                    const sortedRecs = [...recs].sort((a, b) => a.attendance_date.localeCompare(b.attendance_date));
+                    for (let r of sortedRecs) {
+                        let lateMins = r.total_late_minutes || 0;
+                        if (lateMins > 0) {
+                            if (usagesCount < maxUsages && graceUsedMinutes < graceBankLimitMinutes) {
+                                const available = graceBankLimitMinutes - graceUsedMinutes;
+                                const covered = Math.min(lateMins, available);
+                                graceUsedMinutes += covered;
+                                adjustedLateMinutes += (lateMins - covered);
+                                usagesCount++;
+                            } else {
+                                adjustedLateMinutes += lateMins;
+                            }
+                        }
+                    }
+                } else {
+                    adjustedLateMinutes = rawLateMinutes;
+                }
+                
+                const graceExceeded = graceEnabled && graceBankLimitMinutes > 0 && (graceUsedMinutes >= graceBankLimitMinutes || usagesCount >= maxUsages);
+
                 return {
                     ...e,
                     records: recs,
                     total_workdays: recs.reduce((s, r) => s + (parseFloat(r.rendered) || 0), 0).toFixed(2),
-                    total_absences: recs.filter(r => r.status === 'Absent').length +
-                        recs.filter(r => r.status?.includes('Half Day')).length * 0.5,
-                    total_late_minutes: recs.reduce((s, r) => s + (r.total_late_minutes || 0), 0),
+                    total_absences: recs.filter(r => (r.status || '').includes('Absent') && !(r.status || '').includes('Holiday')).length +
+                        recs.filter(r => (r.status || '').includes('Half Day')).length * 0.5,
+                    total_late_minutes: adjustedLateMinutes,
+                    raw_late_minutes: rawLateMinutes,
                     total_undertime_minutes: recs.reduce((s, r) => s + (r.undertime_minutes || 0), 0),
                     total_overtime_minutes: recs.reduce((s, r) => s + (r.overtime_minutes || 0), 0),
-                    total_missed_logs: recs.filter(r => r.missed_logs_count > 0 && r.status !== 'Absent').length,
+                    total_missed_logs: recs.filter(r => (r.missed_logs_count > 0 && !(r.status || '').includes('Absent')) || (r.status || '').includes('Only 1 Log Found')).length,
                     late_frequency: recs.filter(r => r.total_late_minutes > 0).length,
+                    grace_used_minutes: graceUsedMinutes,
+                    grace_bank_limit_minutes: graceEnabled ? graceBankLimitMinutes : 0,
+                    grace_bank_exceeded: graceExceeded,
+                    grace_usages: usagesCount,
+                    grace_max_usages: graceEnabled ? maxUsages : 0,
+                    cumulative_tracking_enabled: graceEnabled,
                 };
             })
             .filter(Boolean)
@@ -1582,9 +1631,9 @@ export default function AttendanceRecords() {
             {currentStep === 2 && (
                 <div>
                     {/* Toolbar */}
-                    <div className="mb-4 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <div className="mb-4 rounded-xl border border-slate-200 bg-white shadow-sm">
                         {/* Top bar */}
-                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
+                        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 rounded-t-xl">
                             <div className="flex items-center gap-3">
                                 <button onClick={() => setActiveFile(null)}
                                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition">
@@ -1639,7 +1688,7 @@ export default function AttendanceRecords() {
                         </div>
 
                         {/* Stats + toggle */}
-                        <div className="flex items-center justify-between px-5 py-2.5 bg-slate-50 border-t border-slate-100">
+                        <div className="flex items-center justify-between px-5 py-2.5 bg-slate-50 border-t border-slate-100 rounded-b-xl">
                             <div className="flex items-center gap-4 text-xs text-slate-500">
                                 <span>Showing <span className="font-medium text-slate-700">{reviewList.length}</span> of <span className="font-medium text-slate-700">{scopedSummary.length}</span> employees</span>
                                 {employeesWithIssues.length > 0 && (
@@ -1651,50 +1700,82 @@ export default function AttendanceRecords() {
                                 {reviewList.length > 0 && (
                                     <button
                                         onClick={() => {
-                                            const dateLabel = activeFile?.date_from && activeFile?.date_to
-                                                ? `${activeFile.date_from}_${activeFile.date_to}`
-                                                : new Date().toISOString().slice(0, 10);
-
-                                            // Sort by department then employee name alphabetically
-                                            const sorted = [...reviewList].sort((a, b) => {
-                                                const deptCmp = (a.department ?? '').localeCompare(b.department ?? '');
-                                                if (deptCmp !== 0) return deptCmp;
-                                                return (a.employee_name ?? '').localeCompare(b.employee_name ?? '');
+                                            const params = new URLSearchParams({
+                                                dateFrom: activeFile?.date_from || '',
+                                                dateTo:   activeFile?.date_to   || '',
                                             });
-
-                                            const headers = ['Department', 'Employee Name', 'Employee Code', 'Days Worked', 'Absences', 'Late (HH:MM)', 'Undertime (HH:MM)', 'Overtime (HH:MM)', 'Missing Logs'];
-                                            const rows = sorted.map(emp => [
-                                                emp.department,
-                                                emp.employee_name,
-                                                emp.employee_code,
-                                                emp.total_workdays,
-                                                emp.total_absences,
-                                                fmtTime(emp.total_late_minutes),
-                                                fmtTime(emp.total_undertime_minutes),
-                                                fmtTime(emp.total_overtime_minutes),
-                                                emp.total_missed_logs,
-                                            ]);
-
-                                            const csv = [headers, ...rows]
-                                                .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
-                                                .join('\r\n');
-
-                                            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-                                            const url  = URL.createObjectURL(blob);
-                                            const a    = document.createElement('a');
-                                            a.href = url;
-                                            a.download = `Attendance_Summary_${dateLabel}.csv`;
-                                            a.click();
-                                            URL.revokeObjectURL(url);
+                                            // Add employee IDs if filtered
+                                            reviewList.forEach(e => params.append('employee_ids[]', e.employee_id));
+                                            
+                                            window.location.href = route('admin.attendance.export-excel') + '?' + params.toString();
                                         }}
                                         className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-green-500 hover:text-green-700 hover:bg-green-50"
-                                        title="Export summary to Excel"
+                                        title="Export detailed attendance to Excel"
                                     >
                                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                                         </svg>
                                         Export Excel
                                     </button>
+                                )}
+
+                                {/* Violation Summary */}
+                                {reviewList.length > 0 && (
+                                    <div className="relative inline-block text-left">
+                                        <button
+                                            onClick={() => setSummaryDropdownOpen(!summaryDropdownOpen)}
+                                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:border-amber-500 hover:text-amber-700 hover:bg-amber-50"
+                                            title="Export violation summary to Excel"
+                                        >
+                                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                            </svg>
+                                            Violation Summary
+                                            <svg className={`h-3.5 w-3.5 transition-transform ${summaryDropdownOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                                            </svg>
+                                        </button>
+                                        
+                                        {summaryDropdownOpen && (
+                                            <>
+                                                <div className="fixed inset-0 z-10" onClick={() => setSummaryDropdownOpen(false)}></div>
+                                                <div className="absolute right-0 z-20 mt-2 w-32 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                                    <div className="py-1">
+                                                        <button
+                                                            onClick={() => {
+                                                                setSummaryDropdownOpen(false);
+                                                                const params = new URLSearchParams({
+                                                                    dateFrom: activeFile?.date_from || '',
+                                                                    dateTo:   activeFile?.date_to   || '',
+                                                                    status:   'Open'
+                                                                });
+                                                                reviewList.forEach(e => params.append('employee_ids[]', e.employee_id));
+                                                                window.location.href = route('admin.attendance.export-violations') + '?' + params.toString();
+                                                            }}
+                                                            className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                                                        >
+                                                            Open
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setSummaryDropdownOpen(false);
+                                                                const params = new URLSearchParams({
+                                                                    dateFrom: activeFile?.date_from || '',
+                                                                    dateTo:   activeFile?.date_to   || '',
+                                                                    status:   'Closed'
+                                                                });
+                                                                reviewList.forEach(e => params.append('employee_ids[]', e.employee_id));
+                                                                window.location.href = route('admin.attendance.export-violations') + '?' + params.toString();
+                                                            }}
+                                                            className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-100"
+                                                        >
+                                                            Closed
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
                                 )}
                                 {/* Print Letters — operates on the current filtered list */}
                                 {reviewList.length > 0 && (
@@ -1782,6 +1863,7 @@ export default function AttendanceRecords() {
                                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Days</th>
                                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Absences</th>
                                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Late</th>
+                                            <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Grace Bank</th>
                                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Undertime</th>
                                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Overtime</th>
                                             <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 text-center">Missing Logs</th>
@@ -1819,6 +1901,15 @@ export default function AttendanceRecords() {
                                                     <span className={`text-sm font-semibold ${emp.total_late_minutes > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
                                                         {fmtTime(emp.total_late_minutes)}
                                                     </span>
+                                                </td>
+                                                <td className="whitespace-nowrap px-4 py-3 text-center">
+                                                    {!emp.cumulative_tracking_enabled ? (
+                                                        <span className="text-xs font-medium text-slate-400">Disabled</span>
+                                                    ) : (
+                                                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${emp.grace_bank_exceeded ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                            {`${emp.grace_used_minutes ?? 0}/${emp.grace_bank_limit_minutes ?? 0}`}
+                                                        </span>
+                                                    )}
                                                 </td>
                                                 <td className="whitespace-nowrap px-4 py-3 text-center">
                                                     <span className={`text-sm font-semibold ${emp.total_undertime_minutes > 0 ? 'text-purple-600' : 'text-slate-400'}`}>

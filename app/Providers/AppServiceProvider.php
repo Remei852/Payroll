@@ -12,7 +12,24 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // When running inside Electron (production), redirect all writable paths
+        // to the user's AppData directory so the app works on any PC.
+        $storagePath = env('STORAGE_PATH');
+        $dbPath      = env('DB_DATABASE');
+
+        if ($storagePath) {
+            $this->app->useStoragePath($storagePath);
+            config([
+                'session.files'                => $storagePath . '/framework/sessions',
+                'cache.stores.file.path'       => $storagePath . '/framework/cache/data',
+                'logging.channels.single.path' => $storagePath . '/logs/laravel.log',
+                'logging.channels.daily.path'  => $storagePath . '/logs/laravel.log',
+            ]);
+        }
+
+        if ($dbPath) {
+            config(['database.connections.sqlite.database' => $dbPath]);
+        }
     }
 
     public function boot(): void

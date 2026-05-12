@@ -1,5 +1,5 @@
 import AdminLayout from '@/Layouts/AdminLayout';
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 
 export default function Payslip({ payroll, summary }) {
     const formatCurrency = (amount) => {
@@ -29,8 +29,27 @@ export default function Payslip({ payroll, summary }) {
             <Head title="Employee Payslip" />
 
             <div className="mb-6 print:hidden">
-                <h2 className="text-lg font-semibold text-[#334155]">Employee Payslip</h2>
-                <p className="mt-1 text-sm text-slate-500">Detailed salary breakdown</p>
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <h2 className="text-lg font-semibold text-[#334155]">Employee Payslip</h2>
+                        <p className="mt-1 text-sm text-slate-500">Detailed salary breakdown</p>
+                    </div>
+                    <Link
+                        href={route('admin.payroll.period', payroll.payroll_period_id)}
+                        onClick={(e) => {
+                            if (typeof window !== 'undefined' && window.history.length > 1) {
+                                e.preventDefault();
+                                window.history.back();
+                            }
+                        }}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:border-[#1E3A8A] hover:text-[#1E3A8A] transition"
+                    >
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                        Back
+                    </Link>
+                </div>
             </div>
 
             {/* Info Banner - Payslip Information */}

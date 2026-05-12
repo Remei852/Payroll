@@ -3,6 +3,7 @@
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\AttendanceReportController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\LetterPrintController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ScheduleOverrideController;
 use App\Http\Controllers\SettingsController;
@@ -35,6 +36,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/attendance/upload-logs', [AttendanceController::class, 'storeUpload'])->name('admin.attendance.store-upload');
     Route::post('/attendance/process-logs', [AttendanceController::class, 'processLogs'])->name('admin.attendance.process-logs');
     Route::post('/attendance/process-file', [AttendanceController::class, 'processFile'])->name('admin.attendance.process-file');
+    Route::get('/attendance/export-excel', [AttendanceController::class, 'exportExcel'])->name('admin.attendance.export-excel');
+    Route::get('/attendance/export-violations', [AttendanceController::class, 'exportViolationSummary'])->name('admin.attendance.export-violations');
     Route::delete('/attendance/uploads/{sourceFile}', [AttendanceController::class, 'deleteUpload'])->name('admin.attendance.uploads.destroy')->where('sourceFile', '.*');
     Route::get('/attendance/uploads/{sourceFile}/impact', [AttendanceController::class, 'checkDeleteImpact'])->name('admin.attendance.uploads.impact')->where('sourceFile', '.*');
 
@@ -75,6 +78,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     // Settings - Unified page with tabs
     Route::get('/settings', [SettingsController::class, 'index'])->name('admin.settings.index');
+
+    // Policy / Violation Letter Templates Print
+    Route::get('/letters/print-policy', [LetterPrintController::class, 'index'])->name('admin.letters.print-policy');
     
     // Violations Management
     Route::get('/violations', [ViolationsController::class, 'index'])->name('admin.violations.index');

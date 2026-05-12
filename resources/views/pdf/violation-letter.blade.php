@@ -2,34 +2,24 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Notice of Attendance Violations</title>
+    <title>NOTICE TO EXPLAIN </title>
     <style>
-        @page { size: auto; margin: 0; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @page { margin: 0.5in; }
+        * { box-sizing: border-box; }
 
         body {
             font-family: Arial, Helvetica, sans-serif;
-            font-size: 10pt;
-            line-height: 1.5;
+            font-size: 8pt;
+            line-height: 1.15;
             color: #1e293b;
             background: white;
-            margin: 25.4mm;
+            margin: 0;
         }
-
-        /* ── Company header ── */
-        .company-header {
-            text-align: center;
-            margin-bottom: 10px;
-            padding-bottom: 8px;
-            border-bottom: 2px solid #1e3a8a;
-        }
-        .company-name { font-size: 13pt; font-weight: 700; color: #1e3a8a; letter-spacing: 0.04em; }
-        .company-address { font-size: 8.5pt; color: #64748b; margin-top: 2px; }
 
         /* ── Letter title ── */
         .letter-title {
             text-align: center;
-            font-size: 12pt;
+            font-size: 10pt;
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
@@ -44,7 +34,7 @@
             padding: 7px 10px;
             margin-bottom: 10px;
             background: #f8fafc;
-            font-size: 9.5pt;
+            font-size: 8pt;
         }
         .info-grid { display: table; width: 100%; }
         .info-row  { display: table-row; }
@@ -54,7 +44,7 @@
         hr { border: 0; border-top: 1px solid #cbd5e1; margin: 8px 0; }
 
         /* ── Body text ── */
-        .body-text { font-size: 9.5pt; line-height: 1.55; margin-bottom: 8px; text-align: justify; }
+        .body-text { font-size: 8pt; line-height: 1.15; margin-bottom: 8px; text-align: left; }
 
         /* ── Summary chips ── */
         .summary-row { margin-bottom: 10px; }
@@ -63,7 +53,7 @@
             border: 1px solid #cbd5e1;
             border-radius: 3px;
             padding: 2px 7px;
-            font-size: 8.5pt;
+            font-size: 8pt;
             margin-right: 5px;
             background: #fff;
         }
@@ -71,7 +61,7 @@
 
         /* ── Section headings ── */
         .section-heading {
-            font-size: 9.5pt;
+            font-size: 8pt;
             font-weight: 700;
             margin: 10px 0 4px;
             padding-bottom: 2px;
@@ -81,7 +71,7 @@
 
         /* ── Section notice (policy paragraph per violation type) ── */
         .section-notice {
-            font-size: 8.5pt;
+            font-size: 8pt;
             color: #334155;
             margin-bottom: 6px;
             text-align: justify;
@@ -100,7 +90,7 @@
             font-weight: 700;
             padding: 3px 6px;
             text-align: left;
-            font-size: 7.5pt;
+            font-size: 8pt;
             text-transform: uppercase;
             letter-spacing: 0.03em;
             white-space: nowrap;
@@ -114,33 +104,42 @@
             border: 1px solid #cbd5e1;
             border-radius: 3px;
             padding: 7px 10px;
-            font-size: 9.5pt;
+            font-size: 8pt;
+            line-height: 1.15;
             margin-bottom: 8px;
             background: #fefce8;
             white-space: pre-line;
         }
+        .action-text { margin-top: 5px; font-size: 8pt; line-height: 1.15; white-space: pre-line; }
 
-        .closing { font-size: 9.5pt; line-height: 1.55; text-align: justify; margin-bottom: 8px; }
+        .policy-box {
+            border: 1px solid #bfdbfe;
+            border-radius: 3px;
+            padding: 10px 12px;
+            font-size: 8pt;
+            line-height: 1.15;
+            margin-bottom: 8px;
+            background: #eff6ff;
+        }
+        .policy-title { font-weight: 700; margin-bottom: 6px; }
+        .policy-box p { margin-bottom: 6px; }
+        .policy-box p:last-child { margin-bottom: 0; }
+        .policy-box .penalties { margin-bottom: 6px; }
+        .policy-box .penalties div { margin-bottom: 2px; }
+
+        .closing { font-size: 8pt; line-height: 1.15; text-align: left; margin-bottom: 8px; }
 
         /* ── Signatures ── */
         .sig-section { margin-top: 18px; }
         .sig-row { display: table; width: 100%; }
         .sig-col { display: table-cell; width: 50%; vertical-align: bottom; padding-right: 20px; }
         .sig-line { border-bottom: 1px solid #64748b; width: 200px; margin-top: 26px; margin-bottom: 3px; }
-        .sig-name { font-weight: 700; font-size: 9.5pt; }
-        .sig-sub  { font-size: 8.5pt; color: #475569; }
+        .sig-name { font-weight: 700; font-size: 8pt; }
+        .sig-sub  { font-size: 8pt; color: #475569; }
     </style>
 </head>
 <body>
 
-    {{-- Company header --}}
-    <!--
-    <div class="company-header">
-        <div class="company-name">{{ env('COMPANY_NAME', config('app.name')) }}</div>
-        @if(env('COMPANY_ADDRESS'))
-        <div class="company-address">{{ env('COMPANY_ADDRESS') }}</div>
-        @endif
-    </div> -->
 
     {{-- Letter title --}}
     <div class="letter-title">{{ $content['subject'] }}</div>
@@ -161,11 +160,8 @@
 
     <hr>
 
-    {{-- Opening paragraph --}}
-    <p class="body-text">{{ $content['opening'] }}</p>
-
-    {{-- Policy paragraph --}}
-    <p class="body-text">{{ $content['policyParagraph'] }}</p>
+    {{-- Greeting paragraph --}}
+    <p class="body-text" style="white-space: pre-line; line-height: 1.5; text-align: left;">{{ $content['greeting'] ?? '' }}</p>
 
     {{-- Summary --}}
     <div class="summary-row">
@@ -173,10 +169,10 @@
             <span class="chip">Absences: <span class="chip-val">{{ $summary['totalAbsences'] }}</span></span>
         @endif
         @if($summary['totalLateAM'] > 0)
-            <span class="chip">Late AM: <span class="chip-val">{{ $summary['totalLateAM'] }}</span></span>
+            <span class="chip">Tardiness AM IN: <span class="chip-val">{{ $summary['totalLateAM'] }}</span></span>
         @endif
         @if($summary['totalLatePM'] > 0)
-            <span class="chip">Late PM: <span class="chip-val">{{ $summary['totalLatePM'] }}</span></span>
+            <span class="chip">Tardiness PM IN: <span class="chip-val">{{ $summary['totalLatePM'] }}</span></span>
         @endif
         @if($summary['totalMissedLogs'] > 0)
             <span class="chip">Missing Logs: <span class="chip-val">{{ $summary['totalMissedLogs'] }}</span></span>
@@ -184,11 +180,17 @@
         @if(($summary['totalUndertime'] ?? 0) > 0)
             <span class="chip">Undertime: <span class="chip-val">{{ $summary['totalUndertime'] }}</span></span>
         @endif
+        @if(($summary['graceBankEnabled'] ?? false) && ($summary['graceBankExceeded'] ?? false))
+            <span class="chip">Grace Bank Exceeded: <span class="chip-val">{{ $summary['graceBankUsedMinutes'] ?? 0 }}/{{ $summary['graceBankLimitMinutes'] ?? 0 }} mins ({{ $summary['graceUsages'] ?? 0 }}/{{ $summary['graceMaxUsages'] ?? 0 }} times)</span></span>
+        @elseif(($summary['graceBankEnabled'] ?? false) && ($summary['graceBankUsedMinutes'] ?? 0) > 0)
+            <span class="chip">Grace Bank Used: <span style="color:#0f172a">{{ $summary['graceBankUsedMinutes'] ?? 0 }}/{{ $summary['graceBankLimitMinutes'] ?? 0 }} mins ({{ $summary['graceUsages'] ?? 0 }}/{{ $summary['graceMaxUsages'] ?? 0 }} times)</span></span>
+        @endif
     </div>
 
     {{-- ── Absences ── --}}
     @if(count($violations['absences']) > 0)
-    <div class="section-heading">Absences ({{ $summary['totalAbsences'] }} {{ $summary['totalAbsences'] == 1 ? 'day' : 'days' }})</div>
+    <div class="section-heading"><strong>Violation</strong> Absences ({{ $summary['totalAbsences'] }} {{ $summary['totalAbsences'] == 1 ? 'day' : 'days' }})</div>
+    <div style="line-height:1.55; margin-bottom:6px; text-align:justify;">{{ $content['absenceNotice'] }}</div>
     <table class="ev-table">
         <thead><tr><th style="width:130px">Date</th><th>Status</th></tr></thead>
         <tbody>
@@ -201,7 +203,8 @@
 
     {{-- ── Late AM ── --}}
     @if(count($violations['lateAM']) > 0)
-    <div class="section-heading">Late Arrivals — Morning ({{ $summary['totalLateAM'] }} {{ $summary['totalLateAM'] == 1 ? 'instance' : 'instances' }})</div>
+    <div class="section-heading"><strong>Violation</strong> Tardiness AM IN ({{ $summary['totalLateAM'] }} {{ $summary['totalLateAM'] == 1 ? 'instance' : 'instances' }})</div>
+    <div style="line-height:1.55; margin-bottom:6px; text-align:justify;">{{ $content['lateAMNotice'] }}</div>
     <table class="ev-table">
         <thead><tr><th style="width:130px">Date</th><th style="width:90px">Time In</th><th style="width:100px">Late By</th></tr></thead>
         <tbody>
@@ -214,7 +217,8 @@
 
     {{-- ── Late PM ── --}}
     @if(count($violations['latePM']) > 0)
-    <div class="section-heading">Late Returns — Afternoon ({{ $summary['totalLatePM'] }} {{ $summary['totalLatePM'] == 1 ? 'instance' : 'instances' }})</div>
+    <div class="section-heading"><strong>Violation</strong> Tardiness PM IN ({{ $summary['totalLatePM'] }} {{ $summary['totalLatePM'] == 1 ? 'instance' : 'instances' }})</div>
+    <div style="line-height:1.55; margin-bottom:6px; text-align:justify;">{{ $content['latePMNotice'] }}</div>
     <table class="ev-table">
         <thead><tr><th style="width:130px">Date</th><th style="width:90px">Time In (PM)</th><th style="width:100px">Late By</th></tr></thead>
         <tbody>
@@ -227,7 +231,8 @@
 
     {{-- ── Missing Logs ── --}}
     @if(count($violations['missedLogs']) > 0)
-    <div class="section-heading">Missing Biometric Logs ({{ $summary['totalMissedLogs'] }} {{ $summary['totalMissedLogs'] == 1 ? 'instance' : 'instances' }})</div>
+    <div class="section-heading"><strong>Violation</strong> Missing Biometric Logs ({{ $summary['totalMissedLogs'] }} {{ $summary['totalMissedLogs'] == 1 ? 'instance' : 'instances' }})</div>
+    <div style="line-height:1.55; margin-bottom:6px; text-align:justify;">{{ $content['missedLogNotice'] }}</div>
     <table class="ev-table">
         <thead>
             <tr>
@@ -260,7 +265,8 @@
 
     {{-- Undertime --}}
     @if(count($violations['undertime'] ?? []) > 0)
-    <div class="section-heading">Undertime ({{ $summary['totalUndertime'] }} {{ $summary['totalUndertime'] == 1 ? 'instance' : 'instances' }})</div>
+    <div class="section-heading"><strong>Violation</strong> Undertime ({{ $summary['totalUndertime'] }} {{ $summary['totalUndertime'] == 1 ? 'instance' : 'instances' }})</div>
+    <div style="line-height:1.55; margin-bottom:6px; text-align:justify;">{{ $content['undertimeNotice'] }}</div>
     <table class="ev-table">
         <thead><tr><th style="width:130px">Date</th><th style="width:90px">Time Out</th><th style="width:100px">Undertime By</th></tr></thead>
         <tbody>
@@ -271,60 +277,78 @@
     </table>
     @endif
 
-    {{-- Consolidated notes — plain paragraphs, no box --}}
-    @if(count($violations['absences']) > 0 || count($violations['lateAM']) > 0 || count($violations['latePM']) > 0 || count($violations['missedLogs']) > 0 || count($violations['undertime'] ?? []) > 0)
-    <div style="border-top:1px solid #e2e8f0; padding-top:8px; margin-bottom:10px; margin-top:4px;">
-        @if(count($violations['absences']) > 0)
-        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
-            <strong>Absences:</strong> {{ $content['absenceNotice'] }}
-        </p>
-        @endif
-        @if(count($violations['lateAM']) > 0)
-        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
-            <strong>Late AM:</strong> {{ $content['lateAMNotice'] }}
-        </p>
-        @endif
-        @if(count($violations['latePM']) > 0)
-        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
-            <strong>Late PM:</strong> {{ $content['latePMNotice'] }}
-        </p>
-        @endif
-        @if(count($violations['missedLogs']) > 0)
-        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
-            <strong>Missing Logs:</strong> {{ $content['missedLogNotice'] }}
-        </p>
-        @endif
-        @if(count($violations['undertime'] ?? []) > 0)
-        <p style="font-size:8.5pt; line-height:1.55; margin-bottom:5px; text-align:justify;">
-            <strong>Undertime:</strong> {{ $content['undertimeNotice'] }}
-        </p>
-        @endif
-    </div>
-    @endif
+    {{-- Opening/Combined text moved below tables --}}
+    <p class="body-text" style="white-space: pre-line; line-height: 1.5;">{{ $content['opening'] }}</p>
 
     {{-- Action required — dynamic list based on violations present --}}
     <div class="action-box">
         <strong>Action Required:</strong>
-        <ol style="margin-left:16px; margin-top:5px;">
-            <li style="margin-bottom:3px;">Report to the Human Resources office within five (5) working days from receipt of this memorandum.</li>
-            <li style="margin-bottom:3px;">Submit a written explanation for each violation category listed above within two (2) business days.</li>
-            @if(count($violations['absences']) > 0)
-            <li style="margin-bottom:3px;">For absences, provide supporting documentation (e.g., medical certificate or approved leave form).</li>
-            @endif
-            @if(count($violations['missedLogs'] ?? []) > 0)
-            <li style="margin-bottom:3px;">For missing biometric logs, please provide the time and location where you were last seen, along with proof of attendance (such as supervisor certification, completed work output, or other verifiable evidence).</li>
-            @endif
-            @if(count($violations['lateAM']) > 0 || count($violations['latePM']) > 0)
-            <li style="margin-bottom:3px;">For late arrivals, explain the reason and commit to a corrective action plan.</li>
-            @endif
-            @if(count($violations['undertime'] ?? []) > 0)
-            <li style="margin-bottom:3px;">For undertime, secure prior approval for early departures or provide a valid justification.</li>
-            @endif
-        </ol>
+        <div class="action-text">{{ $content['actionRequired'] }}</div>
     </div>
 
+    @if(count($violations['absences']) > 0 || count($violations['undertime'] ?? []) > 0 || count($violations['missedLogs']) > 0 || ($summary['habitualTardiness'] ?? false))
+    <p class="body-text">{{ $content['policyIntro'] ?? 'To remind you, below are the company policies regarding Attendance Management:' }}</p>
+    @endif
+
+    @if(count($violations['absences']) > 0)
+    <div class="policy-box">
+        <div class="policy-title">Policy: Absences</div>
+        <p>Failure to report for work without prior approval shall be considered an unauthorized absence. Employees must secure approval before taking leave.</p>
+        <p><strong>Penalties:</strong></p>
+        <div class="penalties">
+            <div>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</div>
+            <div>• <strong>2nd Offense</strong> – 10–30 days suspension</div>
+            <div>• <strong>3rd Offense</strong> – Termination</div>
+        </div>
+        <p>Leave applications must be submitted at least five (5) days before the intended leave date, except for emergencies.</p>
+        <p>Emergency or unplanned leave includes, but is not limited to, sudden illness, medical emergencies, accidents, death of an immediate family member, natural calamities, or other unforeseen circumstances beyond the employee’s control.</p>
+        <p>To avoid violations, employees must immediately inform their supervisor of any planned or emergency absence and submit the required leave request or supporting documents as soon as possible.</p>
+    </div>
+    @endif
+
+    @if(count($violations['undertime'] ?? []) > 0)
+    <div class="policy-box">
+        <div class="policy-title">Policy: Undertime</div>
+        <p>Leaving work before the end of the scheduled shift without prior approval and valid reason is considered undertime. Employees must seek approval at least one (1) hour before leaving to ensure work operations are not disrupted and proper endorsement is made.</p>
+        <p><strong>Penalties:</strong></p>
+        <div class="penalties">
+            <div>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</div>
+            <div>• <strong>2nd Offense</strong> – 10–30 days suspension</div>
+            <div>• <strong>3rd Offense</strong> – Termination</div>
+        </div>
+        <p>To avoid violations, employees must secure prior approval before leaving work. In cases of emergency, immediate notification to the supervisor is required, and supporting documents must be submitted as soon as possible.</p>
+    </div>
+    @endif
+
+    @if(count($violations['missedLogs']) > 0)
+    <div class="policy-box">
+        <div class="policy-title">Policy: Improper Logs</div>
+        <p>Improper logs include missed, incomplete, or habitual failure to properly record time-in and time-out entries (AM log in/out, PM log in/out). Incorrect work location refers to logging in or out with an inaccurate geotag or reporting from a location other than the assigned work area without approval. Employees must ensure all attendance records are accurate, complete, and reflect their assigned work location.</p>
+        <p><strong>Penalties:</strong></p>
+        <div class="penalties">
+            <div>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</div>
+            <div>• <strong>2nd Offense</strong> – 10–30 days suspension</div>
+            <div>• <strong>3rd Offense</strong> – Termination</div>
+        </div>
+    </div>
+    @endif
+
+    @if(($summary['habitualTardiness'] ?? false))
+    <div class="policy-box">
+        <div class="policy-title">Policy: Habitual Tardiness</div>
+        <p>Being late four (4) times beyond the prescribed grace period within a cut-off period, or accumulating a total of one (1) hour or sixty (60) minutes of tardiness within fifteen (15) days or a bi-monthly cut-off period.</p>
+        <p><strong>Penalties:</strong></p>
+        <div class="penalties">
+            <div>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</div>
+            <div>• <strong>2nd Offense</strong> – 10–30 days suspension</div>
+            <div>• <strong>3rd Offense</strong> – Termination</div>
+        </div>
+        <p>To avoid violations, employees are expected to manage their time properly and report to work on time. In cases of unavoidable delay, the employee must notify their supervisor at least thirty (30) minutes before their scheduled reporting time and provide a valid reason for the tardiness.</p>
+    </div>
+    @endif
+
     {{-- Closing --}}
-    <p class="closing">{{ $content['closing'] }}</p>
+    <p class="closing" style="white-space: pre-line; line-height: 1.5;">{{ $content['closing'] ?? '' }}</p>
 
     {{-- Signatures --}}
     <div class="sig-section">

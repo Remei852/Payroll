@@ -1,1 +1,0 @@
-import{j as s,H as t}from"./app-i7-6dvRw.js";import{A as e}from"./AdminLayout-C3O9kx-A.js";function a(){return s.jsxs(e,{title:"Missing Logs Report",children:[s.jsx(t,{title:"Missing Logs Report"}),s.jsx("div",{className:"text-sm text-slate-600",children:"Empty page"})]})}export{a as default};

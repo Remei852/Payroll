@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { router } from '@inertiajs/react';
 
-export default function WorkSchedulesTab({ workSchedules = [], departments = [] }) {
+export default function WorkSchedulesTab({ workSchedules = [], departments = [], gracePeriodSettings = {} }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedSchedule, setSelectedSchedule] = useState(null);
     const [form, setForm] = useState({
@@ -14,8 +14,16 @@ export default function WorkSchedulesTab({ workSchedules = [], departments = [] 
         grace_period_minutes: 15,
         undertime_enabled: true,
         undertime_allowance_minutes: 5,
-        monthly_late_allowance_minutes: 0,
         is_working_day: true,
+    });
+
+    const [graceForm, setGraceForm] = useState({
+        cumulative_tracking_enabled: false,
+        daily_grace_minutes: 15,
+        grace_period_limit_minutes: 60,
+        tracking_period: 'pay_period',
+        pay_period_start_day: null,
+        pay_period_frequency: null,
     });
 
     const filteredSchedules = useMemo(() => {
@@ -29,6 +37,9 @@ export default function WorkSchedulesTab({ workSchedules = [], departments = [] 
 
     function handleSelectSchedule(schedule) {
         setSelectedSchedule(schedule);
+
+        const deptGraceSettings = gracePeriodSettings?.[schedule.department_id] || {};
+
         setForm({
             name: schedule.name,
             work_start_time: schedule.work_start_time || '08:00',
@@ -39,8 +50,16 @@ export default function WorkSchedulesTab({ workSchedules = [], departments = [] 
             grace_period_minutes: schedule.grace_period_minutes ?? 15,
             undertime_enabled: schedule.undertime_enabled ?? true,
             undertime_allowance_minutes: schedule.undertime_allowance_minutes ?? 5,
-            monthly_late_allowance_minutes: schedule.monthly_late_allowance_minutes ?? 0,
             is_working_day: schedule.is_working_day ?? true,
+        });
+
+        setGraceForm({
+            cumulative_tracking_enabled: deptGraceSettings.cumulative_tracking_enabled ?? false,
+            daily_grace_minutes: graceForm.daily_grace_minutes,
+            grace_period_limit_minutes: deptGraceSettings.grace_period_limit_minutes ?? 60,
+            tracking_period: deptGraceSettings.tracking_period ?? 'pay_period',
+            pay_period_start_day: deptGraceSettings.pay_period_start_day ?? null,
+            pay_period_frequency: deptGraceSettings.pay_period_frequency ?? null,
         });
     }
 
@@ -50,6 +69,15 @@ export default function WorkSchedulesTab({ workSchedules = [], departments = [] 
         if (selectedSchedule) {
             router.put(route('admin.settings.work-schedules.update', selectedSchedule.id), form);
         }
+    }
+
+    function handleUpdateGraceForDepartment() {
+        if (!selectedSchedule?.department_id) return;
+
+        router.put(route('admin.settings.grace-period.update', selectedSchedule.department_id), graceForm, {
+            preserveScroll: true,
+            preserveState: true,
+        });
     }
 
     function calculateWorkHours(start, end, breakStart, breakEnd) {
@@ -425,21 +453,49 @@ export default function WorkSchedulesTab({ workSchedules = [], departments = [] 
                                 )}
                             </div>
 
-                            {/* Monthly Late Allowance */}
+                            {/* Grace Bank (Pay Period) */}
                             <div className="border-t border-slate-200 pt-4">
-                                <p className="text-xs font-medium text-slate-700 mb-1">Monthly Late Allowance</p>
-                                <p className="text-xs text-slate-500 mb-2">
-                                    Total minutes an employee can be late per month before deductions apply. Set to 0 to disable.
-                                </p>
-                                <div className="flex items-center gap-3">
-                                    <input type="number" min="0" max="480"
-                                        value={form.monthly_late_allowance_minutes}
-                                        onChange={e => setForm({ ...form, monthly_late_allowance_minutes: parseInt(e.target.value) || 0 })}
-                                        className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-[#1E3A8A] focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20" />
-                                    <span className="text-sm text-slate-600">minutes per month</span>
-                                    {form.monthly_late_allowance_minutes === 0 && (
-                                        <span className="text-xs text-slate-400">(disabled)</span>
-                                    )}
+                                <div className="flex items-center justify-between mb-2">
+                                    <div>
+                                        <p className="text-xs font-medium text-slate-700">Grace Bank (Pay Period)</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            Covers up to a fixed amount of late minutes per payroll period.
+                                        </p>
+                                    </div>
+                                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                                        <span className="text-xs text-slate-500">{graceForm.cumulative_tracking_enabled ? 'On' : 'Off'}</span>
+                                        <button type="button"
+                                            onClick={() => setGraceForm({ ...graceForm, cumulative_tracking_enabled: !graceForm.cumulative_tracking_enabled })}
+                                            className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none ${graceForm.cumulative_tracking_enabled ? 'bg-[#1E3A8A]' : 'bg-slate-300'}`}>
+                                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${graceForm.cumulative_tracking_enabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                                        </button>
+                                    </label>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4 mt-3">
+                                    <div>
+                                        <p className="text-xs font-medium text-slate-700 mb-1">Daily grace minutes</p>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`text-sm font-semibold ${graceForm.cumulative_tracking_enabled ? 'text-slate-800' : 'text-slate-400'}`}>
+                                                {form.grace_period_enabled ? (form.grace_period_minutes ?? 0) : 0}
+                                            </span>
+                                            <span className={`text-sm ${graceForm.cumulative_tracking_enabled ? 'text-slate-600' : 'text-slate-400'}`}>
+                                                minutes/day (from Late Tolerance)
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-medium text-slate-700 mb-1">Grace bank limit</p>
+                                        <div className="flex items-center gap-3">
+                                            <input type="number" min="1" max="480"
+                                                disabled={!graceForm.cumulative_tracking_enabled}
+                                                value={graceForm.grace_period_limit_minutes}
+                                                onChange={e => setGraceForm({ ...graceForm, grace_period_limit_minutes: parseInt(e.target.value) || 0, tracking_period: 'pay_period', pay_period_start_day: null, pay_period_frequency: null })}
+                                                className={`w-24 rounded-lg border px-3 py-2 text-sm shadow-sm transition focus:outline-none focus:ring-2 focus:ring-[#1E3A8A]/20 ${graceForm.cumulative_tracking_enabled ? 'border-slate-300 bg-white text-slate-900 focus:border-[#1E3A8A]' : 'border-slate-200 bg-slate-50 text-slate-400'}`}
+                                            />
+                                            <span className={`text-sm ${graceForm.cumulative_tracking_enabled ? 'text-slate-600' : 'text-slate-400'}`}>minutes/pay period</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -475,6 +531,13 @@ export default function WorkSchedulesTab({ workSchedules = [], departments = [] 
                                 <span>Saving will recalculate all existing attendance records for <span className="font-medium text-slate-700">{selectedSchedule.department_name}</span>.</span>
                             </div>
                             <div className="flex items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={handleUpdateGraceForDepartment}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+                                >
+                                    Update Grace Bank
+                                </button>
                                 <button
                                     type="submit"
                                     className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-primary/90 hover:shadow-md"

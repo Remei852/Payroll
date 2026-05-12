@@ -87,7 +87,6 @@ class ViolationDetectionService
         $employee = Employee::findOrFail($employeeId);
         $violations = [];
 
-        // Detect each violation type
         $detectionMethods = [
             'detectCumulativeGracePeriodViolation',
             'detectUnexcusedAbsence',
@@ -97,6 +96,8 @@ class ViolationDetectionService
             'detectUnauthorizedWork',
             'detectExcessiveUndertime',
             'detectFrequentHalfDay',
+            'detectSingleMissedLog',
+            'detectSingleHalfDay',
         ];
 
         foreach ($detectionMethods as $method) {
@@ -156,8 +157,37 @@ class ViolationDetectionService
             return ($record->late_minutes_am ?? 0) + ($record->late_minutes_pm ?? 0);
         });
 
-        // Check if threshold exceeded
-        if ($totalLateMinutes < $settings->grace_period_limit_minutes) {
+        $dailyGraceMinutes = $settings->daily_grace_minutes ?? 15;
+        $maxUsages = (int) floor($settings->grace_period_limit_minutes / max(1, $dailyGraceMinutes));
+
+        // Sort chronologically to count usages correctly
+        $sortedRecords = $lateRecords->sortBy('attendance_date');
+        $graceUsedMinutes = 0;
+        $usagesCount = 0;
+        $deductibleMinutes = 0;
+
+        foreach ($sortedRecords as $record) {
+            $lateMins = ($record->late_minutes_am ?? 0) + ($record->late_minutes_pm ?? 0);
+            if ($lateMins > 0) {
+                if ($usagesCount < $maxUsages && $graceUsedMinutes < $settings->grace_period_limit_minutes) {
+                    $available = $settings->grace_period_limit_minutes - $graceUsedMinutes;
+                    $covered = min($lateMins, $available);
+                    $graceUsedMinutes += $covered;
+                    $deductibleMinutes += ($lateMins - $covered);
+                    $usagesCount++;
+                } else {
+                    $deductibleMinutes += $lateMins;
+                }
+            }
+        }
+
+        // Check if threshold exceeded (either in minutes or usages)
+        if ($graceUsedMinutes < $settings->grace_period_limit_minutes && $usagesCount < $maxUsages && $deductibleMinutes === 0) {
+            return null;
+        }
+
+        // Only create a violation if there's actually deductible minutes
+        if ($deductibleMinutes <= 0) {
             return null;
         }
 
@@ -181,8 +211,6 @@ class ViolationDetectionService
             ];
         })->toArray();
 
-        $deductibleMinutes = $totalLateMinutes - $settings->grace_period_limit_minutes;
-
         // Create violation record
         $violationData = [
             'employee_id' => $employee->id,
@@ -192,15 +220,20 @@ class ViolationDetectionService
             'status' => 'Pending',
             'details' => sprintf(
                 'Employee exceeded cumulative grace period limit. Total late: %d minutes, ' .
-                'Grace period limit: %d minutes, Deductible minutes: %d. ' .
-                'Salary deduction will be applied for minutes exceeding the grace period limit.',
+                'Grace period used: %d minutes (%d/%d instances), Grace period limit: %d minutes. ' .
+                'Salary deduction will be applied for %d minutes exceeding the grace period limit.',
                 $totalLateMinutes,
+                $graceUsedMinutes,
+                $usagesCount,
+                $maxUsages,
                 $settings->grace_period_limit_minutes,
                 $deductibleMinutes
             ),
             'metadata' => [
                 'total_late_minutes' => $totalLateMinutes,
-                'grace_period_used' => $totalLateMinutes,
+                'grace_period_used' => $graceUsedMinutes,
+                'grace_usages' => $usagesCount,
+                'max_usages' => $maxUsages,
                 'grace_period_limit' => $settings->grace_period_limit_minutes,
                 'deductible_minutes' => $deductibleMinutes,
                 'tracking_period' => $settings->tracking_period,
@@ -229,7 +262,8 @@ class ViolationDetectionService
         // Query for absence records (not excused)
         $absenceRecord = AttendanceRecord::where('employee_id', $employee->id)
             ->where('attendance_date', $date)
-            ->where('status', 'Absent')
+            ->where('status', 'like', '%Absent%')
+            ->where('status', 'not like', '%Holiday%')
             ->first();
 
         if (!$absenceRecord) {
@@ -280,7 +314,8 @@ class ViolationDetectionService
         
         $records = AttendanceRecord::where('employee_id', $employee->id)
             ->whereBetween('attendance_date', [$startDate, $date])
-            ->where('status', 'Absent')
+            ->where('status', 'like', '%Absent%')
+            ->where('status', 'not like', '%Holiday%')
             ->orderBy('attendance_date', 'asc')
             ->get();
 
@@ -531,6 +566,55 @@ class ViolationDetectionService
     }
 
     /**
+     * Detect single missed log violation for a specific date.
+     *
+     * @param Employee $employee
+     * @param Carbon $date
+     */
+    protected function detectSingleMissedLog(
+        Employee $employee,
+        Carbon $date
+    ): ?array {
+        $record = AttendanceRecord::where('employee_id', $employee->id)
+            ->where('attendance_date', $date->format('Y-m-d 00:00:00'))
+            ->first();
+
+        if (!$record || $record->missed_logs_count <= 0) {
+            return null;
+        }
+
+        // Check if violation already exists for this date
+        $existingViolation = AttendanceViolation::where('employee_id', $employee->id)
+            ->where('violation_type', 'Missing Log')
+            ->where('violation_date', $date->format('Y-m-d 00:00:00'))
+            ->first();
+
+        if ($existingViolation) {
+            return null;
+        }
+
+        // Create violation record
+        $violationData = [
+            'employee_id' => $employee->id,
+            'violation_date' => $date->format('Y-m-d 00:00:00'),
+            'violation_type' => 'Missing Log',
+            'severity' => 'Medium',
+            'status' => 'Pending',
+            'details' => sprintf(
+                'Employee has %d missed log(s) on this date.',
+                $record->missed_logs_count
+            ),
+            'metadata' => [
+                'missed_count' => $record->missed_logs_count,
+            ],
+        ];
+
+        AttendanceViolation::create($violationData);
+
+        return $violationData;
+    }
+
+    /**
      * Detect unauthorized work pattern (3+ occurrences in 30 days).
      *
      * @param Employee $employee
@@ -696,7 +780,7 @@ class ViolationDetectionService
 
         $records = AttendanceRecord::where('employee_id', $employee->id)
             ->whereBetween('attendance_date', [$startDate, $date])
-            ->where('status', 'Half Day')
+            ->where('status', 'like', '%Half Day%')
             ->get();
 
         $occurrencesCount = $records->count();
@@ -751,6 +835,51 @@ class ViolationDetectionService
     }
 
     /**
+     * Detect single half-day violation for a specific date.
+     *
+     * @param Employee $employee
+     * @param Carbon $date
+     */
+    protected function detectSingleHalfDay(
+        Employee $employee,
+        Carbon $date
+    ): ?array {
+        $record = AttendanceRecord::where('employee_id', $employee->id)
+            ->where('attendance_date', $date->format('Y-m-d 00:00:00'))
+            ->first();
+
+        if (!$record || !str_contains($record->status ?? '', 'Half Day')) {
+            return null;
+        }
+
+        // Check if violation already exists
+        $existingViolation = AttendanceViolation::where('employee_id', $employee->id)
+            ->where('violation_type', 'Half Day')
+            ->where('violation_date', $date->format('Y-m-d 00:00:00'))
+            ->first();
+
+        if ($existingViolation) {
+            return null;
+        }
+
+        $violationData = [
+            'employee_id' => $employee->id,
+            'violation_date' => $date->format('Y-m-d 00:00:00'),
+            'violation_type' => 'Half Day',
+            'severity' => 'Medium',
+            'status' => 'Pending',
+            'details' => "Employee was recorded as {$record->status}.",
+            'metadata' => [
+                'status' => $record->status,
+            ],
+        ];
+
+        AttendanceViolation::create($violationData);
+
+        return $violationData;
+    }
+
+    /**
      * Get grace period settings for a department with fallback to defaults.
      *
      * @param int $departmentId
@@ -768,6 +897,7 @@ class ViolationDetectionService
         return (object) [
             'department_id' => $departmentId,
             'cumulative_tracking_enabled' => DepartmentGracePeriodSettings::DEFAULT_CUMULATIVE_ENABLED,
+            'daily_grace_minutes' => DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES,
             'grace_period_limit_minutes' => DepartmentGracePeriodSettings::DEFAULT_GRACE_PERIOD_MINUTES,
             'tracking_period' => DepartmentGracePeriodSettings::DEFAULT_TRACKING_PERIOD,
             'pay_period_start_day' => null,

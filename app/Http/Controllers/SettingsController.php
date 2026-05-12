@@ -77,6 +77,7 @@ class SettingsController extends Controller
             'workSchedules'   => $workSchedules,
             'scheduleOverrides' => $allOverrides,
             'departments'     => $departments,
+            'gracePeriodSettings' => $gracePeriodSettings,
             'currentYear'     => $year,
         ]);
     }

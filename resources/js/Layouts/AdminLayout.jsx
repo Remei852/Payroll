@@ -133,14 +133,14 @@ export default function AdminLayout({ title, children }) {
                     />
 
                     <SidebarItem
-                        label="Violations"
+                        label="Print Policy Letter"
                         icon={
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829l2.12-2.12a1.5 1.5 0 012.12 0l1.06 1.06a1.5 1.5 0 002.12 0l2.12-2.12m-9 7.5h10.5a2.25 2.25 0 002.25-2.25V9a2.25 2.25 0 00-2.25-2.25H7.5A2.25 2.25 0 005.25 9v4.5a2.25 2.25 0 002.25 2.25z" />
                             </svg>
                         }
-                        href={route('admin.violations.index')}
-                        active={isCurrent('admin.violations.index')}
+                        href={route('admin.letters.print-policy')}
+                        active={isCurrent('admin.letters.print-policy')}
                         collapsed={sidebarCollapsed}
                     />
 

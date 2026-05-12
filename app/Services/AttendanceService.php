@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\AttendanceLog;
 use App\Models\AttendanceRecord;
+use App\Models\DepartmentGracePeriodSettings;
 use App\Models\Employee;
+use App\Models\Holiday;
 use App\Models\WorkSchedule;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -298,16 +300,16 @@ class AttendanceService
         $totalWorkedHours = $totalWorkedMinutes / 60;
 
         // Calculate flags - use time slot based times
-        $isLateAM = $this->isLate($firstIn, $schedule);
-        $isLatePM = $this->isLatePM($timeSlots['lunch_in'], $schedule);
+        $isLateAM = $this->isLate($firstIn, $schedule, $date);
+        $isLatePM = $this->isLatePM($timeSlots['lunch_in'], $schedule, $date);
         $isUndertime = $this->isUndertime($lastOut, $schedule, $date);
         $isEarlyLunchOut = $this->isEarlyLunchOut($timeSlots['lunch_out'], $schedule, $date);
         $hasIncompleteLogs = $this->hasIncompleteLogs($inferredLogs);
         $hasDuplicates = count($logs) !== count($uniqueLogs);
 
         // Calculate late minutes - AM and PM separately
-        $lateMinutesAM = $this->calculateLateMinutes($firstIn, $schedule);
-        $lateMinutesPM = $this->calculateLatePM($timeSlots['lunch_in'], $schedule);
+        $lateMinutesAM = $this->calculateLateMinutes($firstIn, $schedule, $date);
+        $lateMinutesPM = $this->calculateLatePM($timeSlots['lunch_in'], $schedule, $date);
         $totalLateMinutes = $lateMinutesAM + $lateMinutesPM;
         
         // Calculate overtime minutes
@@ -334,16 +336,19 @@ class AttendanceService
             $holiday,
             $override,
             $timeSlots,
-            $date
+            $date,
+            count($uniqueLogs)
         );
 
         // Calculate workday rendered based on status
         // 1.0 = full day, 0.5 = half day, 0.0 = absent
         $workdayRendered = $this->calculateWorkdayRendered($status, $totalWorkedHours, $schedule);
 
-        // If status is "Absent" or "No Work", reset late minutes to 0
+        // If status is "Absent", "No Work", or "Half Day AM", reset late minutes to 0
+        // Half Day AM means AM was absent — late should not be counted for that shift.
         $isAbsent = $status === 'Absent' || str_contains($status, 'Absent -') || str_starts_with($status, 'No Work');
-        if ($isAbsent) {
+        $isHalfDayAM = str_contains($status, 'Half Day AM');
+        if ($isAbsent || $isHalfDayAM) {
             $lateMinutesAM = 0;
             $lateMinutesPM = 0;
             $totalLateMinutes = 0;
@@ -361,7 +366,7 @@ class AttendanceService
         AttendanceRecord::updateOrCreate(
             [
                 'employee_id' => $employee->id,
-                'attendance_date' => $date->format('Y-m-d'),
+                'attendance_date' => $date->format('Y-m-d 00:00:00'),
             ],
             [
                 'schedule_id' => $schedule->id,
@@ -427,7 +432,7 @@ class AttendanceService
         AttendanceRecord::updateOrCreate(
             [
                 'employee_id' => $employee->id,
-                'attendance_date' => $date->format('Y-m-d'),
+                'attendance_date' => $date->format('Y-m-d 00:00:00'),
             ],
             [
                 'schedule_id' => $schedule->id,
@@ -688,10 +693,32 @@ class AttendanceService
         foreach ($logs as $log) {
             if ($prevLog) {
                 $timeDiff = $prevLog->log_datetime->diffInSeconds($log->log_datetime);
+                $sameOriginalType = strtoupper((string) $prevLog->log_type) === strtoupper((string) $log->log_type);
+
+                $prevMinutes = ((int) $prevLog->log_datetime->format('H') * 60) + (int) $prevLog->log_datetime->format('i');
+                $currMinutes = ((int) $log->log_datetime->format('H') * 60) + (int) $log->log_datetime->format('i');
+
+                // If there are multiple consecutive morning IN scans, keep only the earliest.
+                // This prevents the position-based inference from flipping the second IN into an OUT.
+                // Morning window here is before 11:00 AM.
+                if ($sameOriginalType
+                    && strtoupper((string) $log->log_type) === 'IN'
+                    && $prevMinutes < 660
+                    && $currMinutes < 660
+                ) {
+                    Log::info('Removed redundant morning IN scan', [
+                        'kept' => $prevLog->log_datetime->format('H:i:s'),
+                        'removed' => $log->log_datetime->format('H:i:s'),
+                        'diff_seconds' => $timeDiff,
+                    ]);
+                    continue;
+                }
                 
                 // If less than 3 minutes apart, it's likely a double-tap or repeat scan
                 // Keep the first one, skip the second
-                if ($timeDiff < 180) {
+                // IMPORTANT: only treat it as a double-tap if the original types are the same.
+                // This preserves legitimate OUT->IN transitions that can happen quickly at lunch return.
+                if ($timeDiff < 180 && $sameOriginalType) {
                     Log::info('Removed double-tap log', [
                         'first' => $prevLog->log_datetime->format('H:i:s'),
                         'second' => $log->log_datetime->format('H:i:s'),
@@ -736,10 +763,10 @@ class AttendanceService
             }
             elseif ($index === 1 && $logCount === 3) {
                 // Special case: 3 logs total (IN-?-OUT pattern)
-                // Second log should be OUT (lunch OUT) to avoid losing morning work
-                // Pattern: IN (morning) - OUT (lunch) - OUT (afternoon)
-                // This will create one pair: IN to first OUT
-                $inferredType = 'OUT';
+                // Infer second log by time:
+                // - Before 12:45 → OUT (lunch out)
+                // - At/After 12:45 → IN (lunch in) meaning lunch-out is missing
+                $inferredType = ($totalMinutes < $lunchBoundary) ? 'OUT' : 'IN';
             }
             elseif ($index === 1) {
                 // Second log depends on time (4+ logs)
@@ -993,7 +1020,8 @@ class AttendanceService
         $holiday = null,
         $override = null,
         array $timeSlots = [],
-        $date = null
+        $date = null,
+        int $rawLogCount = 0
     ): string {
         $statuses = [];
 
@@ -1043,6 +1071,11 @@ class AttendanceService
         $isHolidayWork = $holiday && $override && $override->override_type !== 'no_work';
 
         // Regular working day logic
+        // Rule: If only 1 biometric log exists, consider as Whole Day Absent
+        if ($rawLogCount === 1) {
+            return 'Absent - Only 1 Log Found';
+        }
+
         // Check if person is ABSENT first (no complete IN-OUT pair or no IN log)
         // BUT: if they have PM slots (lunch_in + afternoon_out), that's a Half Day AM — not Absent
         $hasPmSlots = !empty($timeSlots['lunch_in']) || !empty($timeSlots['afternoon_out']);
@@ -1086,8 +1119,9 @@ class AttendanceService
             $statuses[] = $isHalfDayAM ? 'Half Day AM' : 'Half Day PM';
         }
 
-        // Priority 3: LATE - Check both AM and PM (only if not absent)
-        if ($isLateAM || $isLatePM) {
+        // Priority 3: LATE - Check both AM and PM (only if not absent and not Half Day AM)
+        // Half Day AM means AM was absent — late should not be flagged.
+        if (($isLateAM || $isLatePM) && !$isHalfDay) {
             $statuses[] = 'Late';
         }
 
@@ -1123,8 +1157,8 @@ class AttendanceService
         // Split status into individual statuses
         $statusParts = array_map('trim', explode(',', $statusLower));
         
-        // Check if "absent" is one of the statuses (not just a substring)
-        $isAbsent = in_array('absent', $statusParts);
+        // Check if status contains "absent" (handles "Absent", "Absent - Only 1 Log Found", etc.)
+        $isAbsent = str_contains($statusLower, 'absent');
 
         // "No Work" = company-declared non-working day — no deduction, no credit
         $isNoWork = str_starts_with($statusLower, 'no work');
@@ -1158,18 +1192,20 @@ class AttendanceService
      * Check if employee is late.
      * Uses schedule's grace_period_enabled and grace_period_minutes.
      */
-    private function isLate(?string $firstIn, WorkSchedule $schedule): bool
+    private function isLate(?string $firstIn, WorkSchedule $schedule, Carbon $date): bool
     {
         if (!$firstIn) return false;
 
-        $today = Carbon::today();
-        $startTime = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_start_time);
-        $actualIn  = Carbon::parse($today->format('Y-m-d') . ' ' . $firstIn);
+        $startTime = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->work_start_time);
+        $actualIn  = Carbon::parse($date->format('Y-m-d') . ' ' . $firstIn);
 
-        // If grace period is disabled, any arrival after start time is late
-        $graceMins = ($schedule->grace_period_enabled ?? true)
-            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
-            : 0;
+        $graceSettings = $schedule->department_id 
+            ? \App\Models\DepartmentGracePeriodSettings::where('department_id', $schedule->department_id)->first() 
+            : null;
+            
+        $graceMins = $graceSettings 
+            ? (int) ($graceSettings->daily_grace_minutes ?? \App\Models\DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
+            : (($schedule->grace_period_enabled ?? true) ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES) : 0);
 
         return $actualIn->gt($startTime->copy()->addMinutes($graceMins));
     }
@@ -1178,40 +1214,48 @@ class AttendanceService
      * Calculate late minutes from scheduled start time.
      * Late minutes are counted from start time (not from end of grace period).
      */
-    private function calculateLateMinutes(?string $firstIn, WorkSchedule $schedule): int
+    private function calculateLateMinutes(?string $firstIn, WorkSchedule $schedule, Carbon $date): int
     {
         if (!$firstIn) return 0;
 
-        $today = Carbon::today();
-        $startTime = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->work_start_time);
-        $actualIn  = Carbon::parse($today->format('Y-m-d') . ' ' . $firstIn);
+        $startTime = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->work_start_time);
+        $actualIn  = Carbon::parse($date->format('Y-m-d') . ' ' . $firstIn);
 
-        $graceMins = ($schedule->grace_period_enabled ?? true)
-            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
-            : 0;
+        $graceSettings = $schedule->department_id 
+            ? \App\Models\DepartmentGracePeriodSettings::where('department_id', $schedule->department_id)->first() 
+            : null;
+            
+        $graceMins = $graceSettings 
+            ? (int) ($graceSettings->daily_grace_minutes ?? \App\Models\DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
+            : (($schedule->grace_period_enabled ?? true) ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES) : 0);
 
-        if ($actualIn->gt($startTime->copy()->addMinutes($graceMins))) {
-            return $startTime->diffInMinutes($actualIn);
-        }
+        if ($actualIn->lte($startTime)) return 0;
 
-        return 0;
+        $cumulativeEnabled = $graceSettings ? ($graceSettings->cumulative_tracking_enabled ?? false) : false;
+
+        if (!$cumulativeEnabled && $actualIn->lte($startTime->copy()->addMinutes($graceMins))) return 0;
+
+        return $startTime->diffInMinutes($actualIn);
     }
 
     /**
      * Check if employee is late returning from lunch (PM).
      * Uses the same grace_period_minutes as morning late tolerance.
      */
-    private function isLatePM(?string $pmIn, WorkSchedule $schedule): bool
+    private function isLatePM(?string $pmIn, WorkSchedule $schedule, Carbon $date): bool
     {
         if (!$pmIn) return false;
 
-        $today    = Carbon::today();
-        $breakEnd = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_end_time);
-        $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $pmIn);
+        $breakEnd = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->break_end_time);
+        $actualIn = Carbon::parse($date->format('Y-m-d') . ' ' . $pmIn);
 
-        $graceMins = ($schedule->grace_period_enabled ?? true)
-            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
-            : 0;
+        $graceSettings = $schedule->department_id 
+            ? \App\Models\DepartmentGracePeriodSettings::where('department_id', $schedule->department_id)->first() 
+            : null;
+            
+        $graceMins = $graceSettings 
+            ? (int) ($graceSettings->daily_grace_minutes ?? \App\Models\DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
+            : (($schedule->grace_period_enabled ?? true) ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES) : 0);
 
         return $actualIn->gt($breakEnd->copy()->addMinutes($graceMins));
     }
@@ -1219,23 +1263,28 @@ class AttendanceService
     /**
      * Calculate afternoon late minutes (from break_end_time, using grace period).
      */
-    private function calculateLatePM(?string $pmIn, WorkSchedule $schedule): int
+    private function calculateLatePM(?string $pmIn, WorkSchedule $schedule, Carbon $date): int
     {
         if (!$pmIn) return 0;
 
-        $today    = Carbon::today();
-        $breakEnd = Carbon::parse($today->format('Y-m-d') . ' ' . $schedule->break_end_time);
-        $actualIn = Carbon::parse($today->format('Y-m-d') . ' ' . $pmIn);
+        $breakEnd = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->break_end_time);
+        $actualIn = Carbon::parse($date->format('Y-m-d') . ' ' . $pmIn);
 
-        $graceMins = ($schedule->grace_period_enabled ?? true)
-            ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES)
-            : 0;
+        $graceSettings = $schedule->department_id 
+            ? \App\Models\DepartmentGracePeriodSettings::where('department_id', $schedule->department_id)->first() 
+            : null;
+            
+        $graceMins = $graceSettings 
+            ? (int) ($graceSettings->daily_grace_minutes ?? \App\Models\DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
+            : (($schedule->grace_period_enabled ?? true) ? ($schedule->grace_period_minutes ?? self::GRACE_PERIOD_MINUTES) : 0);
 
-        if ($actualIn->gt($breakEnd->copy()->addMinutes($graceMins))) {
-            return $breakEnd->diffInMinutes($actualIn);
-        }
+        if ($actualIn->lte($breakEnd)) return 0;
 
-        return 0;
+        $cumulativeEnabled = $graceSettings ? ($graceSettings->cumulative_tracking_enabled ?? false) : false;
+
+        if (!$cumulativeEnabled && $actualIn->lte($breakEnd->copy()->addMinutes($graceMins))) return 0;
+
+        return $breakEnd->diffInMinutes($actualIn);
     }
 
     /**
@@ -1914,10 +1963,20 @@ class AttendanceService
      */
     public function getAttendanceSummary(): array
     {
-        $records = AttendanceRecord::with(['employee.department'])
+        $records = AttendanceRecord::with(['employee.department.workSchedule'])
             ->withCount('changes')
             ->get()
             ->groupBy('employee_id');
+
+        $departmentIds = $records
+            ->map(fn ($employeeRecords) => $employeeRecords->first()?->employee?->department_id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $graceSettingsByDepartment = DepartmentGracePeriodSettings::whereIn('department_id', $departmentIds)
+            ->get()
+            ->keyBy('department_id');
 
         $summary = [];
 
@@ -1930,8 +1989,8 @@ class AttendanceService
 
             $totalWorkdays = $employeeRecords->sum('rendered');
             
-            // Count absences (whole day only)
-            $totalAbsences = $employeeRecords->where('status', 'Absent')->count();
+            // Count absences (including "Only 1 Log Found")
+            $totalAbsences = $employeeRecords->filter(fn($r) => str_contains($r->status ?? '', 'Absent') && !str_contains($r->status ?? '', 'Holiday'))->count();
             
             // Count half-day absences
             $halfDayCount = $employeeRecords->filter(fn($r) =>
@@ -1944,10 +2003,10 @@ class AttendanceService
             $totalLateMinutes = $employeeRecords->sum('total_late_minutes');
             $totalOvertimeMinutes = $employeeRecords->sum('overtime_minutes');
             
-            // Count days with missed logs (excluding absences)
+            // Count days with missed logs (allowing "Only 1 Log Found" to be included)
             $totalMissedLogs = $employeeRecords
                 ->where('missed_logs_count', '>', 0)
-                ->filter(fn($r) => $r->status !== 'Absent')
+                ->filter(fn($r) => !str_contains($r->status ?? '', 'Absent') || str_contains($r->status ?? '', 'Only 1 Log Found'))
                 ->count();
             
             // Calculate undertime
@@ -1956,11 +2015,24 @@ class AttendanceService
             // Count late frequency (days with late > 0)
             $lateFrequency = $employeeRecords->filter(fn($r) => $r->total_late_minutes > 0)->count();
 
+            $deptId = $employee->department_id;
+            $deptSettings = $deptId ? ($graceSettingsByDepartment[$deptId] ?? null) : null;
+
+            $schedule = $employee->department?->workSchedule;
+            $derivedDailyGraceMinutes = $schedule
+                ? (int) (($schedule->grace_period_enabled ?? true)
+                    ? ($schedule->grace_period_minutes ?? DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
+                    : 0)
+                : (int) ($deptSettings->daily_grace_minutes ?? DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES);
+
             $summary[] = [
                 'employee_id' => $employee->id,
                 'employee_code' => $employee->employee_code,
                 'employee_name' => $employee->last_name . ', ' . $employee->first_name,
                 'department' => $employee->department->name ?? 'N/A',
+                'cumulative_tracking_enabled' => (bool) ($deptSettings->cumulative_tracking_enabled ?? DepartmentGracePeriodSettings::DEFAULT_CUMULATIVE_ENABLED),
+                'daily_grace_minutes' => $derivedDailyGraceMinutes,
+                'grace_period_limit_minutes' => (int) ($deptSettings->grace_period_limit_minutes ?? DepartmentGracePeriodSettings::DEFAULT_GRACE_PERIOD_MINUTES),
                 'total_workdays' => round($totalWorkdays, 2),
                 'total_absences' => $totalAbsenceDays,
                 'total_late_minutes' => $totalLateMinutes,
@@ -2116,7 +2188,7 @@ class AttendanceService
             \App\Models\AttendanceViolation::updateOrCreate(
                 [
                     'employee_id' => $employee->id,
-                    'violation_date' => $date->format('Y-m-d'),
+                    'violation_date' => $date->format('Y-m-d 00:00:00'),
                     'violation_type' => $violation['violation_type'],
                 ],
                 [

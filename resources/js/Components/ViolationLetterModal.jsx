@@ -8,7 +8,7 @@ function EditableBlock({ value, onChange, multiline = true, style = {}, classNam
     const ref = useRef(null);
 
     const start = () => setEditing(true);
-    const stop  = (e) => { onChange(e.target.value); setEditing(false); };
+    const stop = (e) => { onChange(e.target.value); setEditing(false); };
 
     useEffect(() => {
         if (editing && ref.current) {
@@ -68,12 +68,12 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
     if (!data) return null;
     const { employee, dateRange, violations: v, summary } = data;
 
-    const cell = { padding: '3px 6px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'top', fontSize: '8pt' };
-    const th   = { padding: '3px 6px', textAlign: 'left', fontSize: '7.5pt', textTransform: 'uppercase', letterSpacing: '0.03em', background: '#1e3a8a', color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' };
-    const tbl  = { width: 'auto', borderCollapse: 'collapse', marginBottom: 10, fontSize: '8pt' };
+    const cell = { padding: '3px 6px', borderBottom: '1px solid #e2e8f0', verticalAlign: 'top', fontSize: '9pt' };
+    const th = { padding: '3px 6px', textAlign: 'left', fontSize: '9pt', textTransform: 'uppercase', letterSpacing: '0.03em', background: '#1e3a8a', color: '#fff', fontWeight: 700, whiteSpace: 'nowrap' };
+    const tbl = { width: 'auto', borderCollapse: 'collapse', marginBottom: 10, fontSize: '9pt' };
 
     return (
-        <div style={{ background: '#fff', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9.5pt', lineHeight: 1.55, color: '#1e293b', padding: '14mm 16mm' }}>
+        <div style={{ background: '#fff', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '10pt', lineHeight: 1.15, color: '#1e293b', padding: '0.5in' }}>
 
             {/* Company header 
             
@@ -83,9 +83,9 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
             </div>
                 */}
             {/* Letter title — editable */}
-            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: '11pt', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '8px 0 10px', color: '#0f172a' }}>
+            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: '12pt', letterSpacing: '0.08em', textTransform: 'uppercase', margin: '10px 0 10px', color: '#0f172a' }}>
                 <EditableBlock value={content.subject} onChange={v => onChange('subject', v)} multiline={false}
-                    style={{ textAlign: 'center', fontWeight: 700, fontSize: '11pt', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0f172a', display: 'inline-block', minWidth: 200 }} />
+                    style={{ textAlign: 'center', fontWeight: 700, fontSize: '12pt', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#0f172a', display: 'inline-block', minWidth: 200 }} />
             </div>
 
             {/* Employee info block — read-only */}
@@ -93,7 +93,7 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
                 {[
                     ['Employee Name', employee.name],
                     ['Employee Code', employee.code],
-                    ['Department',    employee.department],
+                    ['Department', employee.department],
                     ['Period Covered', `${dateRange.startFormatted} to ${dateRange.endFormatted}`],
                 ].map(([label, val]) => (
                     <div key={label} style={{ display: 'flex', marginBottom: 2 }}>
@@ -104,9 +104,9 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
                 <div style={{ display: 'flex', marginBottom: 2 }}>
                     <ReadOnly style={{ width: 110, fontWeight: 700, color: '#475569', flexShrink: 0 }}>Date Issued:</ReadOnly>
                     <EditableBlock value={content.dateIssued} onChange={v => onChange('dateIssued', v)} multiline={false}
-                        style={{ fontSize: '9pt', color: '#1e293b' }} />
+                        style={{ fontSize: '9.5pt', color: '#1e293b' }} />
                 </div>
-              { /*    <div style={{ display: 'flex', marginBottom: 2 }}>
+                { /*    <div style={{ display: 'flex', marginBottom: 2 }}>
               { /*      <ReadOnly style={{ width: 110, fontWeight: 700, color: '#475569', flexShrink: 0 }}>Reference No.:</ReadOnly> 
                     <EditableBlock value={content.referenceNo || ''} onChange={v => onChange('referenceNo', v === '—' ? '' : v)} multiline={false}
                         style={{ fontSize: '9pt', color: '#1e293b' }} />
@@ -115,29 +115,37 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
 
             <hr style={{ border: 0, borderTop: '1px solid #cbd5e1', margin: '8px 0' }} />
 
-            {/* Opening — editable */}
-            <div style={{ marginBottom: 7, textAlign: 'justify' }}>
-                <EditableBlock value={content.opening} onChange={v => onChange('opening', v)} />
-            </div>
-
-            {/* Policy paragraph — editable */}
-            <div style={{ marginBottom: 10, textAlign: 'justify' }}>
-                <EditableBlock value={content.policyParagraph} onChange={v => onChange('policyParagraph', v)} />
+            {/* Greeting — editable */}
+            <div style={{ marginBottom: 10, textAlign: 'left', fontSize: '10pt', lineHeight: 1.5, whiteSpace: 'pre-line', color: '#1e293b' }}>
+                <EditableBlock value={content.greeting} onChange={v => onChange('greeting', v)} />
             </div>
 
             {/* Summary chips — read-only */}
             <div style={{ marginBottom: 10 }}>
-                {summary.totalAbsences > 0   && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Absences: <strong style={{ color: '#dc2626' }}>{summary.totalAbsences}</strong></span>}
-                {summary.totalLateAM > 0     && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Late AM: <strong style={{ color: '#dc2626' }}>{summary.totalLateAM}</strong></span>}
-                {summary.totalLatePM > 0     && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Late PM: <strong style={{ color: '#dc2626' }}>{summary.totalLatePM}</strong></span>}
+                {summary.totalAbsences > 0 && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Absences: <strong style={{ color: '#dc2626' }}>{summary.totalAbsences}</strong></span>}
+                {summary.totalLateAM > 0 && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Late AM: <strong style={{ color: '#dc2626' }}>{summary.totalLateAM}</strong></span>}
+                {summary.totalLatePM > 0 && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Late PM: <strong style={{ color: '#dc2626' }}>{summary.totalLatePM}</strong></span>}
                 {summary.totalMissedLogs > 0 && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Missing Logs: <strong style={{ color: '#dc2626' }}>{summary.totalMissedLogs}</strong></span>}
-                {summary.totalUndertime > 0  && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Undertime: <strong style={{ color: '#dc2626' }}>{summary.totalUndertime}</strong></span>}
+                {summary.totalUndertime > 0 && <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>Undertime: <strong style={{ color: '#dc2626' }}>{summary.totalUndertime}</strong></span>}
+                {summary.graceBankEnabled && summary.graceBankExceeded && (
+                    <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>
+                        Grace Bank Exceeded: <strong style={{ color: '#dc2626' }}>{summary.graceBankUsedMinutes}/{summary.graceBankLimitMinutes} mins ({summary.graceUsages}/{summary.graceMaxUsages} times)</strong>
+                    </span>
+                )}
+                {summary.graceBankEnabled && !summary.graceBankExceeded && summary.graceBankUsedMinutes > 0 && (
+                    <span style={{ display: 'inline-block', border: '1px solid #cbd5e1', borderRadius: 3, padding: '2px 7px', fontSize: '8.5pt', marginRight: 5, background: '#fff' }}>
+                        Grace Bank Used: <strong style={{ color: '#0f172a' }}>{summary.graceBankUsedMinutes}/{summary.graceBankLimitMinutes} mins ({summary.graceUsages}/{summary.graceMaxUsages} times)</strong>
+                    </span>
+                )}
             </div>
 
             {/* Absences */}
             {v.absences.length > 0 && <>
                 <div style={{ fontWeight: 700, fontSize: '9.5pt', borderBottom: '1px solid #cbd5e1', paddingBottom: 2, marginBottom: 5, color: '#0f172a' }}>
-                    Absences ({summary.totalAbsences} {summary.totalAbsences === 1 ? 'day' : 'days'})
+                    <strong>Violation</strong> Absences ({summary.totalAbsences} {summary.totalAbsences === 1 ? 'day' : 'days'})
+                </div>
+                <div style={{ fontSize: '9pt', lineHeight: 1.55, marginBottom: 6, textAlign: 'justify' }}>
+                    <EditableBlock value={content.absenceNotice} onChange={val => onChange('absenceNotice', val)} />
                 </div>
                 <table style={tbl}>
                     <thead><tr><th style={{ ...th, width: 130 }}>Date</th><th style={th}>Status</th></tr></thead>
@@ -151,7 +159,10 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
             {/* Late AM */}
             {v.lateAM.length > 0 && <>
                 <div style={{ fontWeight: 700, fontSize: '9.5pt', borderBottom: '1px solid #cbd5e1', paddingBottom: 2, marginBottom: 5, color: '#0f172a' }}>
-                    Late Arrivals — Morning ({summary.totalLateAM} {summary.totalLateAM === 1 ? 'instance' : 'instances'})
+                    <strong>Violation</strong> Tardiness AM IN ({summary.totalLateAM} {summary.totalLateAM === 1 ? 'instance' : 'instances'})
+                </div>
+                <div style={{ fontSize: '9pt', lineHeight: 1.55, marginBottom: 6, textAlign: 'justify' }}>
+                    <EditableBlock value={content.lateAMNotice} onChange={val => onChange('lateAMNotice', val)} />
                 </div>
                 <table style={tbl}>
                     <thead><tr><th style={{ ...th, width: 130 }}>Date</th><th style={{ ...th, width: 90 }}>Time In</th><th style={{ ...th, width: 100 }}>Late By</th></tr></thead>
@@ -166,7 +177,10 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
             {/* Late PM */}
             {v.latePM.length > 0 && <>
                 <div style={{ fontWeight: 700, fontSize: '9.5pt', borderBottom: '1px solid #cbd5e1', paddingBottom: 2, marginBottom: 5, color: '#0f172a' }}>
-                    Late Returns — Afternoon ({summary.totalLatePM} {summary.totalLatePM === 1 ? 'instance' : 'instances'})
+                    <strong>Violation</strong> Tardiness PM IN ({summary.totalLatePM} {summary.totalLatePM === 1 ? 'instance' : 'instances'})
+                </div>
+                <div style={{ fontSize: '9pt', lineHeight: 1.55, marginBottom: 6, textAlign: 'justify' }}>
+                    <EditableBlock value={content.latePMNotice} onChange={val => onChange('latePMNotice', val)} />
                 </div>
                 <table style={tbl}>
                     <thead><tr><th style={{ ...th, width: 130 }}>Date</th><th style={{ ...th, width: 90 }}>Time In (PM)</th><th style={{ ...th, width: 100 }}>Late By</th></tr></thead>
@@ -181,11 +195,14 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
             {/* Missing Logs */}
             {v.missedLogs.length > 0 && <>
                 <div style={{ fontWeight: 700, fontSize: '9.5pt', borderBottom: '1px solid #cbd5e1', paddingBottom: 2, marginBottom: 5, color: '#0f172a' }}>
-                    Missing Biometric Logs ({summary.totalMissedLogs} {summary.totalMissedLogs === 1 ? 'instance' : 'instances'})
+                    <strong>Violation</strong> Missing Biometric Logs ({summary.totalMissedLogs} {summary.totalMissedLogs === 1 ? 'instance' : 'instances'})
+                </div>
+                <div style={{ fontSize: '9pt', lineHeight: 1.55, marginBottom: 6, textAlign: 'justify' }}>
+                    <EditableBlock value={content.missedLogNotice} onChange={val => onChange('missedLogNotice', val)} />
                 </div>
                 <table style={tbl}>
                     <thead><tr>
-                        {['Date','AM In','AM Out','PM In','PM Out','Missing Slots'].map(h => <th key={h} style={th}>{h}</th>)}
+                        {['Date', 'AM In', 'AM Out', 'PM In', 'PM Out', 'Missing Slots'].map(h => <th key={h} style={th}>{h}</th>)}
                     </tr></thead>
                     <tbody>{v.missedLogs.map((r, i) => (
                         <tr key={i} style={{ background: i % 2 ? '#f8fafc' : '#fff' }}>
@@ -208,6 +225,9 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
                 <div style={{ fontWeight: 700, fontSize: '9.5pt', borderBottom: '1px solid #cbd5e1', paddingBottom: 2, marginBottom: 5, color: '#0f172a' }}>
                     Undertime ({summary.totalUndertime} {summary.totalUndertime === 1 ? 'instance' : 'instances'})
                 </div>
+                <div style={{ fontSize: '9pt', lineHeight: 1.55, marginBottom: 6, textAlign: 'justify' }}>
+                    <EditableBlock value={content.undertimeNotice} onChange={val => onChange('undertimeNotice', val)} />
+                </div>
                 <table style={tbl}>
                     <thead><tr><th style={{ ...th, width: 130 }}>Date</th><th style={{ ...th, width: 90 }}>Time Out</th><th style={{ ...th, width: 100 }}>Undertime By</th></tr></thead>
                     <tbody>{v.undertime.map((r, i) => <tr key={i} style={{ background: i % 2 ? '#f8fafc' : '#fff' }}>
@@ -217,20 +237,146 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
                     </tr>)}</tbody>
                 </table>
             </>}
+            {/* Opening text moved below the tables */}
+            <div style={{ marginBottom: 12, textAlign: 'justify', fontSize: '10pt', lineHeight: 1.5, whiteSpace: 'pre-line', color: '#1e293b' }}>
+                <EditableBlock value={content.opening} onChange={v => onChange('opening', v)} />
+            </div>
+
             {/* Action Required — numbered list, editable as a block */}
-            <div style={{ border: '1px solid #cbd5e1', borderRadius: 3, padding: '7px 10px', background: '#fefce8', marginBottom: 8, fontSize: '9.5pt' }}>
+            <div style={{ border: '1px solid #cbd5e1', borderRadius: 3, padding: '7px 10px', background: '#fefce8', marginBottom: 8, fontSize: '9pt' }}>
                 <strong>Action Required:</strong>
                 <div style={{ marginTop: 6 }}>
                     <EditableBlock
                         value={content.actionRequired}
                         onChange={val => onChange('actionRequired', val)}
-                        style={{ fontSize: '9.5pt', whiteSpace: 'pre-line', lineHeight: 1.7 }}
+                        style={{ fontSize: '9pt', whiteSpace: 'pre-line', lineHeight: 1.15 }}
                     />
                 </div>
             </div>
 
+            {(v.absences.length > 0 || (v.undertime?.length > 0) || v.missedLogs.length > 0 || summary.habitualTardiness) && (
+                <div style={{ marginBottom: 8, fontSize: '10pt', lineHeight: 1.55 }}>
+                    <EditableBlock value={content.policyIntro} onChange={val => onChange('policyIntro', val)} />
+                </div>
+            )}
+
+            {v.absences.length > 0 && (
+                <div style={{ border: '1px solid #bfdbfe', borderRadius: 3, padding: '7px 10px', background: '#eff6ff', marginBottom: 8, fontSize: '9pt' }}>
+                    <strong>Policy:</strong>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            <strong>Absences</strong>
+                            <br />
+                            Failure to report for work without prior approval shall be considered an unauthorized absence. Employees must secure approval before taking leave.
+                        </ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                        <ReadOnly><strong>Penalties:</strong></ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                        <ReadOnly>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>2nd Offense</strong> – 10–30 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>3rd Offense</strong> – Termination</ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            Leave applications must be submitted at least five (5) days before the intended leave date, except for emergencies.
+                        </ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            Emergency or unplanned leave includes, but is not limited to, sudden illness, medical emergencies, accidents, death of an immediate family member, natural calamities, or other unforeseen circumstances beyond the employee’s control.
+                        </ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            To avoid violations, employees must immediately inform their supervisor of any planned or emergency absence and submit the required leave request or supporting documents as soon as possible.
+                        </ReadOnly>
+                    </div>
+                </div>
+            )}
+
+            {v.missedLogs.length > 0 && (
+                <div style={{ border: '1px solid #bfdbfe', borderRadius: 3, padding: '7px 10px', background: '#eff6ff', marginBottom: 8, fontSize: '9pt' }}>
+                    <strong>Policy:</strong>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            <strong>Improper Logs</strong>
+                            <br />
+                            Improper logs include missed, incomplete, or habitual failure to properly record time-in and time-out entries (AM log in/out, PM log in/out). Incorrect work location refers to logging in or out with an inaccurate geotag or reporting from a location other than the assigned work area without approval. Employees must ensure all attendance records are accurate, complete, and reflect their assigned work location.
+                        </ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                        <ReadOnly><strong>Penalties:</strong></ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                        <ReadOnly>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>2nd Offense</strong> – 10–30 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>3rd Offense</strong> – Termination</ReadOnly>
+                    </div>
+                </div>
+            )}
+
+            {v.undertime?.length > 0 && (
+                <div style={{ border: '1px solid #bfdbfe', borderRadius: 3, padding: '7px 10px', background: '#eff6ff', marginBottom: 8, fontSize: '9pt' }}>
+                    <strong>Policy:</strong>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            <strong>Undertime</strong>
+                            <br />
+                            Leaving work before the end of the scheduled shift without prior approval and valid reason is considered undertime. Employees must seek approval at least one (1) hour before leaving to ensure work operations are not disrupted and proper endorsement is made.
+                        </ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                        <ReadOnly><strong>Penalties:</strong></ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                        <ReadOnly>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>2nd Offense</strong> – 10–30 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>3rd Offense</strong> – Termination</ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            To avoid violations, employees must secure prior approval before leaving work. In cases of emergency, immediate notification to the supervisor is required, and supporting documents must be submitted as soon as possible.
+                        </ReadOnly>
+                    </div>
+                </div>
+            )}
+
+            {summary.habitualTardiness && (
+                <div style={{ border: '1px solid #bfdbfe', borderRadius: 3, padding: '7px 10px', background: '#eff6ff', marginBottom: 8, fontSize: '9pt' }}>
+                    <strong>Policy:</strong>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            <strong>Habitual Tardiness</strong> – Being late four (4) times beyond the prescribed grace period within a cut-off period, or accumulating a total of one (1) hour or sixty (60) minutes of tardiness within fifteen (15) days or a bi-monthly cut-off period.
+                        </ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6 }}>
+                        <ReadOnly><strong>Penalties:</strong></ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                        <ReadOnly>• <strong>1st Offense</strong> – Written Reprimand and/or 3–9 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>2nd Offense</strong> – 10–30 days suspension</ReadOnly>
+                        <br />
+                        <ReadOnly>• <strong>3rd Offense</strong> – Termination</ReadOnly>
+                    </div>
+                    <div style={{ marginTop: 6, textAlign: 'justify' }}>
+                        <ReadOnly>
+                            To avoid violations, employees are expected to manage their time properly and report to work on time. In cases of unavoidable delay, the employee must notify their supervisor at least thirty (30) minutes before their scheduled reporting time and provide a valid reason for the tardiness.
+                        </ReadOnly>
+                    </div>
+                </div>
+            )}
+
             {/* Closing — editable */}
-            <div style={{ marginBottom: 8, textAlign: 'justify' }}>
+            <div style={{ marginTop: 12, marginBottom: 15, textAlign: 'justify', fontSize: '10pt', lineHeight: 1.5, whiteSpace: 'pre-line', color: '#1e293b' }}>
                 <EditableBlock value={content.closing} onChange={v => onChange('closing', v)} />
             </div>
 
@@ -257,18 +403,18 @@ function LetterPreview({ data, content, onChange, companyName, companyAddress })
 
 // ─── Main modal ───────────────────────────────────────────────────────────────
 export default function ViolationLetterModal({ isOpen, onClose, employeeId, dateFilters }) {
-    const [loading, setLoading]     = useState(true);
-    const [error, setError]         = useState(null);
-    const [data, setData]           = useState(null);
-    const [content, setContent]     = useState(null);
-    const [defaults, setDefaults]   = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [data, setData] = useState(null);
+    const [content, setContent] = useState(null);
+    const [defaults, setDefaults] = useState(null);
     const [downloading, setDownloading] = useState(false);
-    const [paperSize, setPaperSize]     = useState('A4');
+    const [paperSize, setPaperSize] = useState('A4');
     const [exportFormat, setExportFormat] = useState('pdf');
 
-    const companyName    = document.querySelector('meta[name="company-name"]')?.content
-                        || window.__APP_NAME__
-                        || 'Company Name';
+    const companyName = document.querySelector('meta[name="company-name"]')?.content
+        || window.__APP_NAME__
+        || 'Company Name';
     const companyAddress = document.querySelector('meta[name="company-address"]')?.content || '';
 
     useEffect(() => {
@@ -279,7 +425,7 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
 
         const params = new URLSearchParams();
         if (dateFilters?.dateFrom) params.append('dateFrom', dateFilters.dateFrom);
-        if (dateFilters?.dateTo)   params.append('dateTo',   dateFilters.dateTo);
+        if (dateFilters?.dateTo) params.append('dateTo', dateFilters.dateTo);
 
         const baseUrl = window.location.origin;
         axios.get(`${baseUrl}/employees/${employeeId}/violation-letter/data?${params}`)
@@ -313,7 +459,7 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
         setDownloading(true);
         const params = new URLSearchParams();
         if (dateFilters?.dateFrom) params.append('dateFrom', dateFilters.dateFrom);
-        if (dateFilters?.dateTo)   params.append('dateTo',   dateFilters.dateTo);
+        if (dateFilters?.dateTo) params.append('dateTo', dateFilters.dateTo);
 
         const form = document.createElement('form');
         form.method = 'POST';
@@ -350,10 +496,10 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
         const missRow = (r) => `
             <tr>
                 <td>${r.dateFormatted}</td>
-                <td style="color:${!r.timeInAM?'#dc2626':'inherit'}">${r.timeInAM||'—'}</td>
-                <td style="color:${!r.timeOutLunch?'#dc2626':'inherit'}">${r.timeOutLunch||'—'}</td>
-                <td style="color:${!r.timeInPM?'#dc2626':'inherit'}">${r.timeInPM||'—'}</td>
-                <td style="color:${!r.timeOutPM?'#dc2626':'inherit'}">${r.timeOutPM||'—'}</td>
+                <td style="color:${!r.timeInAM ? '#dc2626' : 'inherit'}">${r.timeInAM || '—'}</td>
+                <td style="color:${!r.timeOutLunch ? '#dc2626' : 'inherit'}">${r.timeOutLunch || '—'}</td>
+                <td style="color:${!r.timeInPM ? '#dc2626' : 'inherit'}">${r.timeInPM || '—'}</td>
+                <td style="color:${!r.timeOutPM ? '#dc2626' : 'inherit'}">${r.timeOutPM || '—'}</td>
                 <td style="color:#dc2626;font-weight:bold">${r.missing.join(', ')}</td>
             </tr>`;
 
@@ -368,7 +514,8 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
 <meta charset="UTF-8">
 <!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
 <style>
-  body { font-family: Arial, sans-serif; font-size: 10pt; color: #1e293b; margin: 2cm 2.5cm; }
+  body { font-family: Arial, sans-serif; font-size: 10pt; color: #1e293b; margin: 0.5in; }
+  .info-table { font-size: 9pt; }
   h1 { font-size: 12pt; font-weight: bold; text-align: center; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 12px; }
   table { border-collapse: collapse; width: auto; margin-bottom: 10px; }
   th { ${thStyle} }
@@ -393,37 +540,96 @@ export default function ViolationLetterModal({ isOpen, onClose, employeeId, date
   <tr><td style="font-weight:bold;color:#475569">Date Issued:</td><td>${content.dateIssued}</td></tr>
 </table>
 <hr style="border:0;border-top:1px solid #cbd5e1;margin:8px 0"/>
-<p>${content.opening}</p>
-<p>${content.policyParagraph}</p>
+<p style="white-space:pre-line;font-size:10pt;line-height:1.5;text-align:left;">${content.greeting}</p>
 <div>
-  ${summary.totalAbsences>0?`<span class="chip">Absences: <b style="color:#dc2626">${summary.totalAbsences}</b></span>`:''}
-  ${summary.totalLateAM>0?`<span class="chip">Late AM: <b style="color:#dc2626">${summary.totalLateAM}</b></span>`:''}
-  ${summary.totalLatePM>0?`<span class="chip">Late PM: <b style="color:#dc2626">${summary.totalLatePM}</b></span>`:''}
-  ${summary.totalMissedLogs>0?`<span class="chip">Missing Logs: <b style="color:#dc2626">${summary.totalMissedLogs}</b></span>`:''}
-  ${summary.totalUndertime>0?`<span class="chip">Undertime: <b style="color:#dc2626">${summary.totalUndertime}</b></span>`:''}
+  ${summary.totalAbsences > 0 ? `<span class="chip">Absences: <b style="color:#dc2626">${summary.totalAbsences}</b></span>` : ''}
+  ${summary.totalLateAM > 0 ? `<span class="chip">Late AM: <b style="color:#dc2626">${summary.totalLateAM}</b></span>` : ''}
+  ${summary.totalLatePM > 0 ? `<span class="chip">Late PM: <b style="color:#dc2626">${summary.totalLatePM}</b></span>` : ''}
+  ${summary.totalMissedLogs > 0 ? `<span class="chip">Missing Logs: <b style="color:#dc2626">${summary.totalMissedLogs}</b></span>` : ''}
+  ${summary.totalUndertime > 0 ? `<span class="chip">Undertime: <b style="color:#dc2626">${summary.totalUndertime}</b></span>` : ''}
+  ${summary.graceBankEnabled && summary.graceBankExceeded ? `<span class="chip">Grace Bank Exceeded: <b style="color:#dc2626">${summary.graceBankUsedMinutes}/${summary.graceBankLimitMinutes} mins (${summary.graceUsages}/${summary.graceMaxUsages} times)</b></span>` : ''}
+  ${summary.graceBankEnabled && !summary.graceBankExceeded && summary.graceBankUsedMinutes > 0 ? `<span class="chip">Grace Bank Used: <b style="color:#0f172a">${summary.graceBankUsedMinutes}/${summary.graceBankLimitMinutes} mins (${summary.graceUsages}/${summary.graceMaxUsages} times)</b></span>` : ''}
 </div>
-${v.absences.length>0?`
-<div class="section">Absences (${summary.totalAbsences} ${summary.totalAbsences===1?'day':'days'})</div>
+${v.absences.length > 0 ? `
+<div class="section"><b>Violation</b> Absences (${summary.totalAbsences} ${summary.totalAbsences === 1 ? 'day' : 'days'})</div>
+<div style="font-size:9pt; line-height:1.55; margin-bottom:6px; text-align:justify;">${content.absenceNotice}</div>
 <table><thead><tr><th style="width:140px">Date</th><th>Status</th></tr></thead>
-<tbody>${v.absences.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.status}</td></tr>`).join('')}</tbody></table>`:''}
-${v.lateAM.length>0?`
-<div class="section">Late Arrivals — Morning (${summary.totalLateAM} ${summary.totalLateAM===1?'instance':'instances'})</div>
+<tbody>${v.absences.map((r, i) => `<tr style="background:${i % 2 ? '#f8fafc' : '#fff'}"><td>${r.dateFormatted}</td><td>${r.status}</td></tr>`).join('')}</tbody></table>` : ''}
+${v.lateAM.length > 0 ? `
+<div class="section"><b>Violation</b> Tardiness AM IN (${summary.totalLateAM} ${summary.totalLateAM === 1 ? 'instance' : 'instances'})</div>
+<div style="font-size:9pt; line-height:1.55; margin-bottom:6px; text-align:justify;">${content.lateAMNotice}</div>
 <table><thead><tr><th style="width:140px">Date</th><th style="width:90px">Time In</th><th>Late By</th></tr></thead>
-<tbody>${v.lateAM.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.timeIn||'—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>`:''}
-${v.latePM.length>0?`
-<div class="section">Late Returns — Afternoon (${summary.totalLatePM} ${summary.totalLatePM===1?'instance':'instances'})</div>
+<tbody>${v.lateAM.map((r, i) => `<tr style="background:${i % 2 ? '#f8fafc' : '#fff'}"><td>${r.dateFormatted}</td><td>${r.timeIn || '—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>` : ''}
+${v.latePM.length > 0 ? `
+<div class="section"><b>Violation</b> Tardiness PM IN (${summary.totalLatePM} ${summary.totalLatePM === 1 ? 'instance' : 'instances'})</div>
+<div style="font-size:9pt; line-height:1.55; margin-bottom:6px; text-align:justify;">${content.latePMNotice}</div>
 <table><thead><tr><th style="width:140px">Date</th><th style="width:90px">Time In (PM)</th><th>Late By</th></tr></thead>
-<tbody>${v.latePM.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.timeIn||'—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>`:''}
-${v.missedLogs.length>0?`
-<div class="section">Missing Biometric Logs (${summary.totalMissedLogs} ${summary.totalMissedLogs===1?'instance':'instances'})</div>
+<tbody>${v.latePM.map((r, i) => `<tr style="background:${i % 2 ? '#f8fafc' : '#fff'}"><td>${r.dateFormatted}</td><td>${r.timeIn || '—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>` : ''}
+${v.missedLogs.length > 0 ? `
+<div class="section"><b>Violation</b> Missing Biometric Logs (${summary.totalMissedLogs} ${summary.totalMissedLogs === 1 ? 'instance' : 'instances'})</div>
+<div style="font-size:9pt; line-height:1.55; margin-bottom:6px; text-align:justify;">${content.missedLogNotice}</div>
 <table><thead><tr><th>Date</th><th>AM In</th><th>AM Out</th><th>PM In</th><th>PM Out</th><th>Missing Slots</th></tr></thead>
-<tbody>${v.missedLogs.map(missRow).join('')}</tbody></table>`:''}
-${v.undertime?.length>0?`
-<div class="section">Undertime (${summary.totalUndertime} ${summary.totalUndertime===1?'instance':'instances'})</div>
+<tbody>${v.missedLogs.map(missRow).join('')}</tbody></table>` : ''}
+${v.undertime?.length > 0 ? `
+<div class="section">Undertime (${summary.totalUndertime} ${summary.totalUndertime === 1 ? 'instance' : 'instances'})</div>
+<div style="font-size:9pt; line-height:1.55; margin-bottom:6px; text-align:justify;">${content.undertimeNotice}</div>
 <table><thead><tr><th style="width:140px">Date</th><th style="width:90px">Time Out</th><th>Undertime By</th></tr></thead>
-<tbody>${v.undertime.map((r,i)=>`<tr style="background:${i%2?'#f8fafc':'#fff'}"><td>${r.dateFormatted}</td><td>${r.timeOut||'—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>`:''}
-<div class="action-box"><b>Action Required:</b><br/><span style="white-space:pre-line">${content.actionRequired}</span></div>
-<p>${content.closing}</p>
+<tbody>${v.undertime.map((r, i) => `<tr style="background:${i % 2 ? '#f8fafc' : '#fff'}"><td>${r.dateFormatted}</td><td>${r.timeOut || '—'}</td><td>${r.timeStr}</td></tr>`).join('')}</tbody></table>` : ''}
+
+<p style="white-space:pre-line;font-size:10pt;line-height:1.5;margin-top:10px;">${content.opening}</p>
+
+<div class="action-box" style="font-size:9pt;"><b>Action Required:</b><br/><span style="white-space:pre-line;font-size:9pt;">${content.actionRequired}</span></div>
+${(v.absences.length > 0 || v.undertime?.length > 0 || v.missedLogs.length > 0 || summary.habitualTardiness) ? `<p style="margin-bottom:8px;font-size:10pt;">${content.policyIntro}</p>` : ''}
+${v.absences.length > 0 ? `
+<div class="action-box" style="background:#eff6ff;border:1px solid #bfdbfe;font-size:9pt;">
+  <b>Policy:</b>
+  <p style="margin-top:6px;"><b>Absences</b><br/>Failure to report for work without prior approval shall be considered an unauthorized absence. Employees must secure approval before taking leave.</p>
+  <p><b>Penalties:</b><br/>
+  • <b>1st Offense</b> – Written Reprimand and/or 3–9 days suspension<br/>
+  • <b>2nd Offense</b> – 10–30 days suspension<br/>
+  • <b>3rd Offense</b> – Termination
+  </p>
+  <p>Leave applications must be submitted at least five (5) days before the intended leave date, except for emergencies.</p>
+  <p>Emergency or unplanned leave includes, but is not limited to, sudden illness, medical emergencies, accidents, death of an immediate family member, natural calamities, or other unforeseen circumstances beyond the employee’s control.</p>
+  <p>To avoid violations, employees must immediately inform their supervisor of any planned or emergency absence and submit the required leave request or supporting documents as soon as possible.</p>
+</div>
+` : ''}
+${v.undertime?.length > 0 ? `
+<div class="action-box" style="background:#eff6ff;border:1px solid #bfdbfe;font-size:9pt;">
+  <b>Policy:</b>
+  <p style="margin-top:6px;"><b>Undertime</b><br/>Leaving work before the end of the scheduled shift without prior approval and valid reason is considered undertime. Employees must seek approval at least one (1) hour before leaving to ensure work operations are not disrupted and proper endorsement is made.</p>
+  <p><b>Penalties:</b><br/>
+  • <b>1st Offense</b> – Written Reprimand and/or 3–9 days suspension<br/>
+  • <b>2nd Offense</b> – 10–30 days suspension<br/>
+  • <b>3rd Offense</b> – Termination
+  </p>
+  <p>To avoid violations, employees must secure prior approval before leaving work. In cases of emergency, immediate notification to the supervisor is required, and supporting documents must be submitted as soon as possible.</p>
+</div>
+` : ''}
+${v.missedLogs.length > 0 ? `
+<div class="action-box" style="background:#eff6ff;border:1px solid #bfdbfe;font-size:9pt;">
+  <b>Policy:</b>
+  <p style="margin-top:6px;"><b>Improper Logs</b><br/>Improper logs include missed, incomplete, or habitual failure to properly record time-in and time-out entries (AM log in/out, PM log in/out). Incorrect work location refers to logging in or out with an inaccurate geotag or reporting from a location other than the assigned work area without approval. Employees must ensure all attendance records are accurate, complete, and reflect their assigned work location.</p>
+  <p><b>Penalties:</b><br/>
+  • <b>1st Offense</b> – Written Reprimand and/or 3–9 days suspension<br/>
+  • <b>2nd Offense</b> – 10–30 days suspension<br/>
+  • <b>3rd Offense</b> – Termination
+  </p>
+</div>
+` : ''}
+${summary.habitualTardiness ? `
+<div class="action-box" style="background:#fefce8;font-size:9pt;">
+  <b>Policy:</b>
+  <p style="margin-top:6px;"><b>Habitual Tardiness</b> – Being late four (4) times beyond the prescribed grace period within a cut-off period, or accumulating a total of one (1) hour or sixty (60) minutes of tardiness within fifteen (15) days or a bi-monthly cut-off period.</p>
+  <p><b>Penalties:</b><br/>
+  • <b>1st Offense</b> – Written Reprimand and/or 3–9 days suspension<br/>
+  • <b>2nd Offense</b> – 10–30 days suspension<br/>
+  • <b>3rd Offense</b> – Termination
+  </p>
+  <p>To avoid violations, employees are expected to manage their time properly and report to work on time. In cases of unavoidable delay, the employee must notify their supervisor at least thirty (30) minutes before their scheduled reporting time and provide a valid reason for the tardiness.</p>
+</div>
+` : ''}
+<p style="white-space:pre-line;font-size:10pt;line-height:1.5;margin-top:10px;">${content.closing}</p>
 <table class="sig-table"><tr>
   <td><div style="font-size:8.5pt;color:#475569">Prepared by:</div><div class="sig-line"></div><b style="font-size:9.5pt">${content.preparedBy}</b><br/><span style="font-size:8.5pt;color:#475569">${content.position}</span></td>
   <td><div style="font-size:8.5pt;color:#475569">Acknowledged by:</div><div class="sig-line"></div><b style="font-size:9.5pt">${employee.name}</b><br/><span style="font-size:8.5pt;color:#475569">Employee &nbsp;&nbsp; Date: ___________________</span></td>
@@ -431,10 +637,10 @@ ${v.undertime?.length>0?`
 </body></html>`;
 
         const blob = new Blob(['\ufeff', html], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-        const url  = URL.createObjectURL(blob);
-        const a    = document.createElement('a');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
         a.href = url;
-        a.download = `Violation_Letter_${employee.code}_${new Date().toISOString().slice(0,10)}.docx`;
+        a.download = `Violation_Letter_${employee.code}_${new Date().toISOString().slice(0, 10)}.docx`;
         a.click();
         URL.revokeObjectURL(url);
         setTimeout(() => setDownloading(false), 500);
@@ -496,7 +702,7 @@ ${v.undertime?.length>0?`
                             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
-                            {downloading ? 'Generating…' : exportFormat === 'word' ? 'Download Word' : 'Download PDF'}
+                            {downloading ? 'Generating…' : exportFormat === 'word' ? 'Download Word' : 'Print PDF'}
                         </button>
                         <button onClick={onClose} className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100">
                             <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

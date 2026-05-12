@@ -71,10 +71,16 @@ class AttendanceReportController extends Controller
 
             foreach ($empRecords as $rec) {
                 $status = $rec->status ?? '';
-                $isAbsent = str_contains(strtolower($status), 'absent') && !str_contains(strtolower($status), 'holiday');
+                $statusLower = strtolower($status);
+                $isAbsent = str_contains($statusLower, 'absent') && !str_contains($statusLower, 'holiday');
+                $isHalfDay = str_contains($statusLower, 'half day');
                 $isLate   = $rec->total_late_minutes > 0 || str_contains(strtolower($status), 'late');
 
-                if ($isAbsent) $totalAbsences++;
+                if ($isAbsent) {
+                    $totalAbsences++;
+                } elseif ($isHalfDay) {
+                    $totalAbsences += 0.5;
+                }
                 if ($isLate)   $totalLateDays++;
                 $totalLateMinutes      += ($rec->total_late_minutes ?? 0);
                 $totalMissingLogs      += ($rec->missed_logs_count ?? 0);

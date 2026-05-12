@@ -204,14 +204,31 @@ class AttendanceController extends Controller
             
             // Apply date filters if provided
             if ($request->dateFrom) {
-                $query->where('attendance_date', '>=', $request->dateFrom);
+                $query->where('attendance_date', '>=', \Carbon\Carbon::parse($request->dateFrom)->format('Y-m-d 00:00:00'));
             }
             
             if ($request->dateTo) {
-                $query->where('attendance_date', '<=', $request->dateTo);
+                $query->where('attendance_date', '<=', \Carbon\Carbon::parse($request->dateTo)->format('Y-m-d 23:59:59'));
             }
             
             $records = $query->orderBy('attendance_date')->get();
+
+            // Grace bank + habitual tardiness summary (used by the letter + chips)
+            $graceSettings = null;
+            if ($employee->department_id) {
+                $graceSettings = \App\Models\DepartmentGracePeriodSettings::where('department_id', $employee->department_id)->first();
+            }
+            $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
+            $graceBankLimitMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? 0);
+            $graceBankUsedMinutes = (int) $records->sum(fn($r) => (int) ($r->total_late_minutes ?? 0));
+            $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && $graceBankUsedMinutes > $graceBankLimitMinutes;
+
+            $gracePeriodMinutes = 0;
+            if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
+                $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
+            }
+            $lateBeyondGraceCount = (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count();
+            $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankUsedMinutes >= 60);
             
             // Calculate violations
             $violations = $this->calculateViolations($records);
@@ -377,10 +394,10 @@ class AttendanceController extends Controller
             $query = \App\Models\AttendanceRecord::where('employee_id', $employeeId);
 
             if ($request->dateFrom) {
-                $query->where('attendance_date', '>=', $request->dateFrom);
+                $query->where('attendance_date', '>=', \Carbon\Carbon::parse($request->dateFrom)->format('Y-m-d 00:00:00'));
             }
             if ($request->dateTo) {
-                $query->where('attendance_date', '<=', $request->dateTo);
+                $query->where('attendance_date', '<=', \Carbon\Carbon::parse($request->dateTo)->format('Y-m-d 23:59:59'));
             }
 
             $records = $query->orderBy('attendance_date')->get();
@@ -392,9 +409,50 @@ class AttendanceController extends Controller
                 ? Carbon::parse($employee->department->workSchedule->work_start_time)->format('g:i A')
                 : '8:30 AM';
 
+            $scheduleEndTime = $employee->department?->workSchedule?->work_end_time
+                ? Carbon::parse($employee->department->workSchedule->work_end_time)->format('g:i A')
+                : '5:30 PM';
+
+            // Grace bank + habitual tardiness summary (used by the letter + chips)
+            $graceSettings = null;
+            if ($employee->department_id) {
+                $graceSettings = \App\Models\DepartmentGracePeriodSettings::where('department_id', $employee->department_id)->first();
+            }
+            $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
+            $graceBankLimitMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? 0);
+            
+            $dailyGraceMinutes = (int) ($graceSettings->daily_grace_minutes ?? 15);
+            $maxUsages = (int) floor($graceBankLimitMinutes / max(1, $dailyGraceMinutes));
+
+            $sortedRecords = $records->sortBy('attendance_date');
+            $graceBankUsedMinutes = 0;
+            $graceUsages = 0;
+            
+            foreach ($sortedRecords as $record) {
+                $late = (int) ($record->total_late_minutes ?? 0);
+                if ($late > 0) {
+                    if ($graceUsages < $maxUsages && $graceBankUsedMinutes < $graceBankLimitMinutes) {
+                        $available = $graceBankLimitMinutes - $graceBankUsedMinutes;
+                        $graceBankUsedMinutes += min($late, $available);
+                        $graceUsages++;
+                    }
+                }
+            }
+            
+            $totalLateMins = (int) $records->sum(fn($r) => (int) ($r->total_late_minutes ?? 0));
+            $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && 
+                ($totalLateMins > $graceBankLimitMinutes || $records->filter(fn($r) => ((int)$r->total_late_minutes ?? 0) > 0)->count() > $maxUsages);
+
+            $gracePeriodMinutes = 0;
+            if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
+                $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
+            }
+            $lateBeyondGraceCount = (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count();
+            $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankExceeded);
+
             // Merge submitted content with defaults
             $submitted = $request->input('content', []);
-            $content   = array_merge($this->defaultLetterContent($scheduleStartTime), $submitted);
+            $content   = array_merge($this->defaultLetterContent($scheduleStartTime, $scheduleEndTime, [], strtoupper($employee->last_name)), $submitted);
 
             $data = [
                 'employee' => [
@@ -407,8 +465,19 @@ class AttendanceController extends Controller
                     'endFormatted'   => $endDate   ? Carbon::parse($endDate)->format('F j, Y')   : null,
                 ],
                 'scheduleStartTime' => $scheduleStartTime,
+                'scheduleEndTime' => $scheduleEndTime,
                 'violations'  => $this->buildSectionedViolations($records),
-                'summary'     => $this->buildViolationSummary($records),
+                'summary'     => array_merge($this->buildViolationSummary($records), [
+                    'graceBankEnabled' => $graceBankEnabled,
+                    'graceBankLimitMinutes' => $graceBankLimitMinutes,
+                    'graceBankUsedMinutes' => $graceBankUsedMinutes,
+                    'graceUsages'          => $graceUsages,
+                    'graceMaxUsages'       => $maxUsages,
+                    'graceBankExceeded' => $graceBankExceeded,
+                    'gracePeriodMinutes' => $gracePeriodMinutes,
+                    'lateBeyondGraceCount' => $lateBeyondGraceCount,
+                    'habitualTardiness' => $habitualTardiness,
+                ]),
                 'currentDate' => $content['dateIssued'] ?: Carbon::now()->format('F j, Y'),
                 'content'     => $content,
             ];
@@ -421,10 +490,10 @@ class AttendanceController extends Controller
 
             $filename = 'Violation_Letter_' . $employee->employee_code . '_' . Carbon::now()->format('Y-m-d') . '.pdf';
 
-            // Only mark Letter Sent on actual download, not preview
+            // Only mark Letter Sent on actual print/export, not preview
             if (!$request->boolean('preview')) {
                 $this->markViolationsLetterSent($employeeId, $request->dateFrom, $request->dateTo);
-                return $pdf->download($filename);
+                return $pdf->stream($filename);
             }
 
             return $pdf->stream($filename);
@@ -442,11 +511,11 @@ class AttendanceController extends Controller
     /**
      * Default editable content for the violation letter.
      */
-    private function defaultLetterContent(string $scheduleStartTime = '8:30 AM', array $violations = []): array
+    private function defaultLetterContent(string $scheduleStartTime = '8:30 AM', string $scheduleEndTime = '5:30 PM', array $violations = [], string $employeeLastName = ''): array
     {
         // Build dynamic action required list based on which violations are present
         $actionItems = [
-            "1. Submit a written explanation for each violation category listed above within two (2) business days.",
+            "1. Submit a written explanation for each violation category listed above within five (5) calendar days.",
         ];
         if (!empty($violations['absences'])) {
             $actionItems[] = count($actionItems) + 1 . ". For absences, provide supporting documentation (e.g., medical certificate or approved leave form).";
@@ -462,18 +531,20 @@ class AttendanceController extends Controller
         }
 
         return [
-            'subject'         => 'Notice of Attendance Violations',
-            'opening'         => 'This memorandum is issued to formally notify you of attendance irregularities recorded during the covered period stated below.',
-            'policyParagraph' => "As provided in the company's attendance policy, employees are expected to observe proper working hours, maintain punctuality, and complete all required daily time logs. The official start time is {$scheduleStartTime}.",
-            'absenceNotice'   => 'Our records indicate that you were absent on the dates listed above. You are required to submit a written explanation and, if applicable, supporting documentation (e.g., medical certificate)',
+            'subject'         => 'NOTICE TO EXPLAIN ',
+            'greeting'        => "Greetings,\n\nDear Mr/Ms {$employeeLastName},\n\nThis notice is issued to formally inform you of the attendance irregularities recorded during the covered period, as reflected in the table below.",
+            'opening'         => "In accordance with the company’s attendance policy, all employees are expected to observe proper working hours, maintain punctuality, and complete all required daily logs and attendance requirements. The official work schedule is from {$scheduleStartTime} to {$scheduleEndTime}. Strict compliance with attendance policies is expected at all times.\n\nRecords indicate instances of tardiness, undertime, absences, incomplete logs, and/or other attendance-related concerns which may constitute violations of company policies and procedures.\n\nAs a result of these attendance irregularities, you are required to take the necessary corrective action only on the specific concern(s) indicated below and provide the appropriate explanation and/or supporting documents, if applicable.",
+            'policyParagraph' => '',
+            'absenceNotice'   => 'Our records indicate that you were absent on the dates listed above. Note: Days with only one biometric log are considered as Whole Day Absent per company policy. You are required to submit a written explanation and, if applicable, supporting documentation (e.g., medical certificate).',
             'lateAMNotice'    => "Records above show that you arrived after the scheduled start time of {$scheduleStartTime}. ",
             'latePMNotice'    => 'The instances above indicate that you returned late from your lunch break.',
-            'missedLogNotice' => 'Our biometric system shows incomplete clock-in/clock-out records on the dates listed above. If you were present, you must submit supporting proof of attendance (e.g., supervisor certification, work output). Failure to provide proof will be treated as absent.',
-            'undertimeNotice' => 'The records below show that you left before the scheduled end of the workday on the listed dates. Undertime is subject to corresponding salary deductions. Please ensure you complete your required working hours or secure prior approval for early departure.',
+            'missedLogNotice' => 'Our biometric system shows incomplete clock-in/clock-out records on the dates listed above. Note: Days with only one biometric log are considered as Whole Day Absent. If you were present, you must submit supporting proof of attendance (e.g., supervisor certification, work output). Failure to provide proof will be treated as absent.',
+            'undertimeNotice' => 'The instances above indicate that you left work before the end of your scheduled shift.',
             'actionRequired'  => implode("\n", $actionItems),
-            'closing'         => 'Failure to comply or repeated violations may result in further disciplinary action in accordance with company policy.',
-            'preparedBy'       => 'MARK LESTER M. TO-ONG',
-            'position'         => 'Operations Manager',
+            'policyIntro'     => 'To remind you, below are the company policies regarding Attendance Management:',
+            'closing'         => "Your written explanation must be submitted to the ECOTRADE Office, Hinapalanon, on or before ___________. For concerns, clarifications, or request for hearing/conference, you may coordinate directly with the office.\n\nFailure to comply within the prescribed period shall be deemed a waiver of your right to be heard, and/or repeated violations may result in further disciplinary action in accordance with company policy.\n\nThank you.",
+            'preparedBy'      => 'MARK LESTER M. TO-ONG',
+            'position'        => 'Operations Manager',
             'referenceNo'     => '',
             'dateIssued'      => Carbon::now()->format('F j, Y'),
         ];
@@ -498,16 +569,36 @@ class AttendanceController extends Controller
             $employee = \App\Models\Employee::with('department.workSchedule')->findOrFail($employeeId);
 
             $query = \App\Models\AttendanceRecord::where('employee_id', $employeeId);
-            if ($request->dateFrom) $query->where('attendance_date', '>=', $request->dateFrom);
-            if ($request->dateTo)   $query->where('attendance_date', '<=', $request->dateTo);
+            if ($request->dateFrom) $query->where('attendance_date', '>=', \Carbon\Carbon::parse($request->dateFrom)->format('Y-m-d 00:00:00'));
+            if ($request->dateTo)   $query->where('attendance_date', '<=', \Carbon\Carbon::parse($request->dateTo)->format('Y-m-d 23:59:59'));
 
             $records   = $query->orderBy('attendance_date')->get();
+
+            $graceSettings = null;
+            if ($employee->department_id) {
+                $graceSettings = \App\Models\DepartmentGracePeriodSettings::where('department_id', $employee->department_id)->first();
+            }
+            $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
+            $graceBankLimitMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? 0);
+            $graceBankUsedMinutes = (int) $records->sum(fn($r) => (int) ($r->total_late_minutes ?? 0));
+            $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && $graceBankUsedMinutes > $graceBankLimitMinutes;
+
+            $gracePeriodMinutes = 0;
+            if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
+                $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
+            }
+            $lateBeyondGraceCount = (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count();
+            $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankUsedMinutes >= 60);
             $startDate = $request->dateFrom ?? $records->min('attendance_date');
             $endDate   = $request->dateTo   ?? $records->max('attendance_date');
 
             $scheduleStartTime = $employee->department?->workSchedule?->work_start_time
                 ? Carbon::parse($employee->department->workSchedule->work_start_time)->format('g:i A')
                 : '8:30 AM';
+
+            $scheduleEndTime = $employee->department?->workSchedule?->work_end_time
+                ? Carbon::parse($employee->department->workSchedule->work_end_time)->format('g:i A')
+                : '5:30 PM';
 
             return response()->json([
                 'employee' => [
@@ -520,9 +611,18 @@ class AttendanceController extends Controller
                     'endFormatted'   => $endDate   ? Carbon::parse($endDate)->format('F j, Y')   : null,
                 ],
                 'scheduleStartTime' => $scheduleStartTime,
+                'scheduleEndTime' => $scheduleEndTime,
                 'violations'  => $this->buildSectionedViolations($records),
-                'summary'     => $this->buildViolationSummary($records),
-                'defaults'    => $this->defaultLetterContent($scheduleStartTime, $this->buildSectionedViolations($records)),
+                'summary'     => array_merge($this->buildViolationSummary($records), [
+                    'graceBankEnabled' => $graceBankEnabled,
+                    'graceBankLimitMinutes' => $graceBankLimitMinutes,
+                    'graceBankUsedMinutes' => $graceBankUsedMinutes,
+                    'graceBankExceeded' => $graceBankExceeded,
+                    'gracePeriodMinutes' => $gracePeriodMinutes,
+                    'lateBeyondGraceCount' => $lateBeyondGraceCount,
+                    'habitualTardiness' => $habitualTardiness,
+                ]),
+                'defaults'    => $this->defaultLetterContent($scheduleStartTime, $scheduleEndTime, $this->buildSectionedViolations($records), strtoupper($employee->last_name)),
             ]);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -556,13 +656,48 @@ class AttendanceController extends Controller
                 $query = \App\Models\AttendanceRecord::where('employee_id', $employee->id);
 
                 if ($request->dateFrom) {
-                    $query->where('attendance_date', '>=', $request->dateFrom);
+                    $query->where('attendance_date', '>=', \Carbon\Carbon::parse($request->dateFrom)->format('Y-m-d 00:00:00'));
                 }
                 if ($request->dateTo) {
-                    $query->where('attendance_date', '<=', $request->dateTo);
+                    $query->where('attendance_date', '<=', \Carbon\Carbon::parse($request->dateTo)->format('Y-m-d 23:59:59'));
                 }
 
                 $records = $query->orderBy('attendance_date')->get();
+
+                $graceSettings = null;
+                if ($employee->department_id) {
+                    $graceSettings = \App\Models\DepartmentGracePeriodSettings::where('department_id', $employee->department_id)->first();
+                }
+                $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
+                $graceBankLimitMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? 0);
+                $dailyGraceMinutes = (int) ($graceSettings->daily_grace_minutes ?? 15);
+                $maxUsages = (int) floor($graceBankLimitMinutes / max(1, $dailyGraceMinutes));
+
+                $sortedRecords = $records->sortBy('attendance_date');
+                $graceBankUsedMinutes = 0;
+                $graceUsages = 0;
+                
+                foreach ($sortedRecords as $record) {
+                    $late = (int) ($record->total_late_minutes ?? 0);
+                    if ($late > 0) {
+                        if ($graceUsages < $maxUsages && $graceBankUsedMinutes < $graceBankLimitMinutes) {
+                            $available = $graceBankLimitMinutes - $graceBankUsedMinutes;
+                            $graceBankUsedMinutes += min($late, $available);
+                            $graceUsages++;
+                        }
+                    }
+                }
+                
+                $totalLateMins = (int) $records->sum(fn($r) => (int) ($r->total_late_minutes ?? 0));
+                $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && 
+                    ($totalLateMins > $graceBankLimitMinutes || $records->filter(fn($r) => ((int)$r->total_late_minutes ?? 0) > 0)->count() > $maxUsages);
+
+                $gracePeriodMinutes = 0;
+                if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
+                    $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
+                }
+                $lateBeyondGraceCount = (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count();
+                $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankExceeded);
 
                 $startDate = $request->dateFrom ?? $records->min('attendance_date');
                 $endDate   = $request->dateTo   ?? $records->max('attendance_date');
@@ -570,6 +705,13 @@ class AttendanceController extends Controller
                 $scheduleStartTime = $employee->department?->workSchedule?->work_start_time
                     ? Carbon::parse($employee->department->workSchedule->work_start_time)->format('g:i A')
                     : '8:30 AM';
+
+                $scheduleEndTime = $employee->department?->workSchedule?->work_end_time
+                    ? Carbon::parse($employee->department->workSchedule->work_end_time)->format('g:i A')
+                    : '5:30 PM';
+
+                $sectionedViolations = $this->buildSectionedViolations($records);
+                $content = $this->defaultLetterContent($scheduleStartTime, $scheduleEndTime, $sectionedViolations, strtoupper($employee->last_name));
 
                 $allEmployeeData[] = [
                     'employee' => [
@@ -582,9 +724,21 @@ class AttendanceController extends Controller
                         'endFormatted'   => $endDate   ? Carbon::parse($endDate)->format('F j, Y')   : null,
                     ],
                     'scheduleStartTime' => $scheduleStartTime,
-                    'violations'  => $this->buildSectionedViolations($records),
-                    'summary'     => $this->buildViolationSummary($records),
+                    'scheduleEndTime' => $scheduleEndTime,
+                    'violations'  => $sectionedViolations,
+                    'summary'     => array_merge($this->buildViolationSummary($records), [
+                        'graceBankEnabled' => $graceBankEnabled,
+                        'graceBankLimitMinutes' => $graceBankLimitMinutes,
+                        'graceBankUsedMinutes' => $graceBankUsedMinutes,
+                        'graceUsages'          => $graceUsages,
+                        'graceMaxUsages'       => $maxUsages,
+                        'graceBankExceeded' => $graceBankExceeded,
+                        'gracePeriodMinutes' => $gracePeriodMinutes,
+                        'lateBeyondGraceCount' => $lateBeyondGraceCount,
+                        'habitualTardiness' => $habitualTardiness,
+                    ]),
                     'currentDate' => Carbon::now()->format('F j, Y'),
+                    'content'     => $content,
                 ];
 
                 // Mark violations as Letter Sent for this employee (if requested)
@@ -613,7 +767,7 @@ class AttendanceController extends Controller
                 return $pdf->stream($filename);
             }
 
-            return $pdf->download($filename);
+            return $pdf->stream($filename);
 
         } catch (\Exception $e) {
             \Log::error('Error generating bulk violation PDF', [
@@ -704,10 +858,10 @@ class AttendanceController extends Controller
             ->whereNull('dismissed_at');
 
         if ($dateFrom) {
-            $query->where('violation_date', '>=', $dateFrom);
+            $query->where('violation_date', '>=', \Carbon\Carbon::parse($dateFrom)->format('Y-m-d 00:00:00'));
         }
         if ($dateTo) {
-            $query->where('violation_date', '<=', $dateTo);
+            $query->where('violation_date', '<=', \Carbon\Carbon::parse($dateTo)->format('Y-m-d 23:59:59'));
         }
 
         $query->update(['status' => 'Letter Sent']);
@@ -758,7 +912,7 @@ class AttendanceController extends Controller
 
             // Title
             $titlePara = $section->addParagraph();
-            $titlePara->addText('NOTICE OF ATTENDANCE VIOLATIONS', $headerStyle);
+            $titlePara->addText('NOTICE TO EXPLAIN ', $headerStyle);
             $titlePara->setParagraphStyle(['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER, 'spaceAfter' => 120]);
 
             // Info block
@@ -780,11 +934,11 @@ class AttendanceController extends Controller
 
             // Opening paragraphs
             $p1 = $section->addParagraph();
-            $p1->addText('This memorandum is issued to formally notify you of attendance irregularities recorded during the covered period stated below.', $bodyStyle);
+            $p1->addText('This notice is issued to formally notify you of attendance irregularities recorded during the covered period stated below.', $bodyStyle);
             $p1->setParagraphStyle(['spaceAfter' => 80, 'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::BOTH]);
 
             $p2 = $section->addParagraph();
-            $p2->addText('As provided in the company\'s attendance policy, employees are expected to observe proper working hours, maintain punctuality, and complete all required daily time logs. The official start time is ' . $emp['scheduleStartTime'] . '.', $bodyStyle);
+            $p2->addText('As provided in the company\'s attendance policy, employees are expected to observe proper working hours, maintain punctuality, and complete all required daily time logs. The official work schedule is ' . $emp['scheduleStartTime'] . ' to ' . ($emp['scheduleEndTime'] ?? '5:30 PM') . '.', $bodyStyle);
             $p2->setParagraphStyle(['spaceAfter' => 80, 'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::BOTH]);
 
             // Summary chips (inline text)
@@ -914,7 +1068,7 @@ class AttendanceController extends Controller
 
             // Action Required
             $section->addText('Action Required:', ['bold' => true, 'size' => 9]);
-            $actionItems = ['Submit a written explanation for each violation category listed above within two (2) business days.'];
+            $actionItems = ['Submit a written explanation for each violation category listed above within five (5) calendar days.'];
             if (count($v['absences']) > 0)
                 $actionItems[] = 'For absences, provide supporting documentation (e.g., medical certificate or approved leave form).';
             if (count($v['missedLogs'] ?? []) > 0)
@@ -1015,7 +1169,8 @@ class AttendanceController extends Controller
                 ];
             }
 
-            if ($record->missed_logs_count > 0) {
+            // Only show in Missing Logs table if they HAVE some logs (not pure 0-log absence)
+            if ($record->missed_logs_count > 0 && (!str_contains($status, 'Absent') || str_contains($status, 'Only 1 Log Found'))) {
                 $missing = [];
                 if (!$record->time_in_am)    $missing[] = 'Time In AM';
                 if (!$record->time_out_lunch) $missing[] = 'Time Out Lunch';
@@ -1066,7 +1221,7 @@ class AttendanceController extends Controller
             'totalAbsences'   => $totalAbsences,
             'totalLateAM'     => $records->filter(fn($r) => $r->late_minutes_am > 0)->count(),
             'totalLatePM'     => $records->filter(fn($r) => $r->late_minutes_pm > 0)->count(),
-            'totalMissedLogs' => $records->filter(fn($r) => $r->missed_logs_count > 0)->count(),
+            'totalMissedLogs' => $records->filter(fn($r) => $r->missed_logs_count > 0 && (!str_contains($r->status ?? '', 'Absent') || str_contains($r->status ?? '', 'Only 1 Log Found')))->count(),
             'totalUndertime'  => $records->filter(fn($r) => $r->undertime_minutes > 0)->count(),
         ];
     }
@@ -1085,7 +1240,7 @@ class AttendanceController extends Controller
             $isAbsent    = str_contains($status, 'Absent');
             $isLateAM    = $record->late_minutes_am > 0;
             $isLatePM    = $record->late_minutes_pm > 0;
-            $isMissed    = $record->missed_logs_count > 0;
+            $isMissed    = $record->missed_logs_count > 0 && (!$isAbsent || str_contains($status, 'Only 1 Log Found'));
             $isUndertime = $record->undertime_minutes > 0;
 
             // Skip clean days
@@ -1187,17 +1342,25 @@ class AttendanceController extends Controller
             $latePm    = 0;
             $undertime = 0;
             $overtime  = 0;
+            $totalLate = 0;
 
             if ($schedule) {
                 $graceMins = ($schedule->grace_period_enabled ?? true)
                     ? ($schedule->grace_period_minutes ?? 15) : 0;
 
+                $graceSettings = $schedule->department_id 
+                    ? \App\Models\DepartmentGracePeriodSettings::where('department_id', $schedule->department_id)->first() 
+                    : null;
+                $cumulativeEnabled = $graceSettings ? ($graceSettings->cumulative_tracking_enabled ?? false) : false;
+
                 // Late AM
                 if ($timeInAm) {
                     $startTime = \Carbon\Carbon::parse($date . ' ' . $schedule->work_start_time);
                     $actualIn  = \Carbon\Carbon::parse($date . ' ' . $timeInAm);
-                    if ($actualIn->gt($startTime->copy()->addMinutes($graceMins))) {
-                        $lateAm = max(0, (int) $startTime->diffInMinutes($actualIn));
+                    if ($actualIn->gt($startTime)) {
+                        if ($cumulativeEnabled || $actualIn->gt($startTime->copy()->addMinutes($graceMins))) {
+                            $lateAm = max(0, (int) $startTime->diffInMinutes($actualIn));
+                        }
                     }
                 }
 
@@ -1205,8 +1368,10 @@ class AttendanceController extends Controller
                 if ($timeInPm) {
                     $breakEnd   = \Carbon\Carbon::parse($date . ' ' . $schedule->break_end_time);
                     $actualPmIn = \Carbon\Carbon::parse($date . ' ' . $timeInPm);
-                    if ($actualPmIn->gt($breakEnd->copy()->addMinutes($graceMins))) {
-                        $latePm = max(0, (int) $breakEnd->diffInMinutes($actualPmIn));
+                    if ($actualPmIn->gt($breakEnd)) {
+                        if ($cumulativeEnabled || $actualPmIn->gt($breakEnd->copy()->addMinutes($graceMins))) {
+                            $latePm = max(0, (int) $breakEnd->diffInMinutes($actualPmIn));
+                        }
                     }
                 }
 
@@ -1230,33 +1395,140 @@ class AttendanceController extends Controller
                 }
             }
 
-            // Missed logs count: count how many of the 4 slots are null
-            $missedLogs = collect([$timeInAm, $timeOutLunch, $timeInPm, $timeOutPm])
-                ->filter(fn($v) => $v === null)->count();
+            $totalLate = max(0, (int) $lateAm) + max(0, (int) $latePm);
 
             // Determine rendered (workday credit)
-            $hasMorning   = $timeInAm !== null;
-            $hasAfternoon = $timeOutPm !== null;
-            if ($hasMorning && $hasAfternoon) {
-                $rendered = 1.0;
-            } elseif ($hasMorning || $hasAfternoon) {
-                $rendered = 0.5;
-            } else {
+            // Follow the same "presence" rules as attendance processing:
+            // Morning presence exists if either AM IN or Out Lunch exists.
+            // Afternoon presence exists if either PM IN or Out PM exists.
+            // This avoids incorrectly marking Half Day when only a lunch/PM log is missing.
+            $hasMorningPresence   = $timeInAm !== null || $timeOutLunch !== null;
+            $hasAfternoonPresence = $timeInPm !== null || $timeOutPm !== null;
+
+            // "Complete" afternoon is still useful for special rule (AM IN missing but PM fully complete)
+            $hasAfternoonComplete = $timeInPm !== null && $timeOutPm !== null;
+            $logCount = collect([$timeInAm, $timeOutLunch, $timeInPm, $timeOutPm])->filter()->count();
+
+            // Special rule: If AM IN is missing but the employee has a complete PM shift,
+            // treat this as Half Day AM (Absent AM) and flag as Missed Log.
+            // NOTE: Do NOT trigger this rule when AM IN exists and only Out Lunch is missing
+            // (that case should remain "Missed Log" only, not "Half Day AM").
+            $isHalfDayAmMissingAmIn = ($timeInAm === null) && $hasAfternoonComplete;
+            
+            // Rule: If only 1 log, it's an absence (0.0 rendered)
+            if ($logCount === 1) {
                 $rendered = 0.0;
+                $missedLogs = 0;
+                
+                // Preserve special prefixes from old status
+                $oldStatus = $record->status ?? '';
+                $prefixes = [];
+                if (str_contains($oldStatus, 'Holiday')) $prefixes[] = 'Holiday Work';
+                if (str_contains($oldStatus, 'Sunday Work')) $prefixes[] = 'Sunday Work';
+                if (str_contains($oldStatus, 'Unauthorized')) $prefixes[] = 'Unauthorized Work Day';
+                
+                $statuses = array_unique(array_merge($prefixes, ['Absent - Only 1 Log Found']));
+                $status = implode(', ', $statuses);
+            } else {
+                if ($hasMorningPresence && $hasAfternoonPresence) {
+                    $rendered = 1.0;
+                } elseif ($hasMorningPresence || $hasAfternoonPresence) {
+                    $rendered = 0.5;
+                } else {
+                    $rendered = 0.0;
+                }
+
+                // Override: if AM IN is missing but PM is complete, this is Half Day AM.
+                // Out Lunch existing without AM IN does NOT count as morning presence.
+                if ($isHalfDayAmMissingAmIn) {
+                    $rendered = 0.5;
+                }
+
+                // Missed logs count should reflect only the rendered shift.
+                if ($rendered === 1.0) {
+                    $missedLogs = collect([$timeInAm, $timeOutLunch, $timeInPm, $timeOutPm])->filter(fn($v) => $v === null)->count();
+                } elseif ($rendered === 0.5 && !$isHalfDayAmMissingAmIn && $hasMorningPresence) {
+                    $missedLogs = collect([$timeInAm, $timeOutLunch])->filter(fn($v) => $v === null)->count();
+                } elseif ($rendered === 0.5) {
+                    $missedLogs = collect([$timeInPm, $timeOutPm])->filter(fn($v) => $v === null)->count();
+                } else {
+                    $missedLogs = 0;
+                }
+
+                // If AM IN is missing but there are later logs, count it as a missed log
+                // so it renders as "Half Day AM" + "Missed Log" (and not "Late").
+                if ($isHalfDayAmMissingAmIn) {
+                    $missedLogs = max(1, (int) $missedLogs);
+                }
+
+                // Preserve special prefixes from old status
+                $oldStatus = $record->status ?? '';
+                $prefixes = [];
+                if (str_contains($oldStatus, 'Holiday')) $prefixes[] = 'Holiday Work';
+                if (str_contains($oldStatus, 'Sunday Work')) $prefixes[] = 'Sunday Work';
+                if (str_contains($oldStatus, 'Unauthorized')) $prefixes[] = 'Unauthorized Work Day';
+
+                // Derive status automatically
+                $statuses = [];
+                if ($rendered === 0.0) {
+                    $statuses[] = 'Absent';
+                } else {
+                    // Smart Missed Log detection:
+                    // Only count as "Missed Log" if a slot is missing within the rendered shift
+                    $isMissingInWorkedShift = false;
+                    if ($rendered === 1.0) {
+                        // Full day: any of the 4 slots missing is a violation
+                        if ($missedLogs > 0) $isMissingInWorkedShift = true;
+                    } elseif ($hasMorningPresence && !$isHalfDayAmMissingAmIn) {
+                        // Half Day PM (Morning Shift): only In AM or Out Lunch missing is a violation
+                        if ($timeInAm === null || $timeOutLunch === null) $isMissingInWorkedShift = true;
+                    } else {
+                        // Half Day AM (Afternoon Shift): only In PM or Out PM missing is a violation
+                        if ($timeInPm === null || $timeOutPm === null) $isMissingInWorkedShift = true;
+                    }
+
+                    if ($isMissingInWorkedShift) $statuses[] = 'Missed Log';
+                    
+                    // Determine which half day
+                    if ($rendered === 0.5) {
+                        if ($isHalfDayAmMissingAmIn || ($hasAfternoonPresence && !$hasMorningPresence)) {
+                            $statuses[] = 'Half Day AM';
+                        } else {
+                            $statuses[] = 'Half Day PM';
+                        }
+                    }
+
+                    // Force Missed Log for Half Day AM when AM IN is missing
+                    if ($isHalfDayAmMissingAmIn && !in_array('Missed Log', $statuses, true)) {
+                        $statuses[] = 'Missed Log';
+                    }
+                    
+                    if ($totalLate > 0 && !$isHalfDayAmMissingAmIn) $statuses[] = 'Late';
+                    if ($undertime > 0)   $statuses[] = 'Undertime';
+                    if (empty($statuses)) $statuses[] = 'Present';
+                }
+                
+                $finalStatuses = array_unique(array_merge($prefixes, $statuses));
+                $status = implode(', ', $finalStatuses);
             }
 
-            // Derive status automatically
-            $statuses = [];
-            if ($rendered === 0.0) {
-                $statuses[] = 'Absent';
-            } else {
-                if ($missedLogs > 0)  $statuses[] = 'Missed Log';
-                if ($rendered === 0.5) $statuses[] = 'Half Day';
-                if ($lateAm > 0 || $latePm > 0) $statuses[] = 'Late';
-                if ($undertime > 0)   $statuses[] = 'Undertime';
-                if (empty($statuses)) $statuses[] = 'Present';
+            // If rendered is 0.0, treat as absent/no work for computed minutes
+            // (prevents showing late/undertime when there is no valid shift rendered)
+            if (($rendered ?? 0.0) <= 0.0) {
+                $lateAm = 0;
+                $latePm = 0;
+                $totalLate = 0;
+                $undertime = 0;
+                $overtime = 0;
             }
-            $status = implode(', ', $statuses);
+
+            // If the employee is Half Day AM due to missing AM IN, do not show late minutes.
+            // This avoids incorrect "Late" totals being displayed when AM is absent.
+            if ($isHalfDayAmMissingAmIn) {
+                $lateAm = 0;
+                $latePm = 0;
+                $totalLate = 0;
+            }
 
             // ── Build update payload ──────────────────────────────────────────
             $updateData = [
@@ -1266,6 +1538,7 @@ class AttendanceController extends Controller
                 'time_out_pm'      => $timeOutPm,
                 'late_minutes_am'  => $lateAm,
                 'late_minutes_pm'  => $latePm,
+                'total_late_minutes'=> $totalLate,
                 'undertime_minutes'=> $undertime,
                 'overtime_minutes' => $overtime,
                 'missed_logs_count'=> $missedLogs,
@@ -1301,6 +1574,21 @@ class AttendanceController extends Controller
             if (!empty($changes)) {
                 \App\Models\AttendanceRecordChange::insert($changes);
             }
+
+            // ── Cleanup old violations ────────────────────────────────────────
+            // When a record is edited, the previous violations might no longer be valid.
+            // Delete existing non-dismissed violations for this date so they can be refreshed.
+            \App\Models\AttendanceViolation::where('employee_id', $record->employee_id)
+                ->where('violation_date', $record->attendance_date->format('Y-m-d 00:00:00'))
+                ->whereNull('dismissed_at')
+                ->delete();
+
+            // Re-detect violations for this date
+            app(\App\Services\ViolationDetectionService::class)->detectViolationsForEmployee(
+                $record->employee_id,
+                $record->attendance_date,
+                $record->attendance_date
+            );
 
             $fresh = $record->fresh();
 
@@ -1613,5 +1901,303 @@ class AttendanceController extends Controller
                 'error' => 'Error validating records'
             ], 500);
         }
+    }
+
+    /**
+     * Export attendance records to Excel using HTML-based format.
+     */
+    public function exportExcel(Request $request)
+    {
+        $request->validate([
+            'dateFrom' => 'required|date',
+            'dateTo'   => 'required|date|after_or_equal:dateFrom',
+            'employee_ids' => 'nullable|array',
+        ]);
+
+        $dateFrom = \Carbon\Carbon::parse($request->dateFrom)->startOfDay();
+        $dateTo   = \Carbon\Carbon::parse($request->dateTo)->endOfDay();
+        $employeeIds = $request->employee_ids;
+
+        $query = \App\Models\Employee::whereNull('deleted_at')
+            ->with(['department']);
+
+        if (!empty($employeeIds)) {
+            $query->whereIn('id', $employeeIds);
+        }
+
+        $employees = $query->orderBy('last_name')->get();
+        $allEmployeeIds = $employees->pluck('id')->toArray();
+
+        $records = \App\Models\AttendanceRecord::whereBetween('attendance_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->whereIn('employee_id', $allEmployeeIds)
+            ->orderBy('attendance_date')
+            ->get();
+
+        $recordsByEmployee = $records->groupBy('employee_id');
+
+        $filename = "Attendance_Report_{$dateFrom->format('Ymd')}_{$dateTo->format('Ymd')}.xls";
+
+        $html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+        $html .= '<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">';
+        $html .= '<style>
+            .text { mso-number-format:"\@"; }
+            .date { mso-number-format:"Short Date"; }
+            .header { background-color: #1e3a8a; color: #ffffff; font-weight: bold; }
+            .summary { background-color: #f8fafc; font-weight: bold; }
+            .late { color: #c2410c; }
+            .absent { background-color: #fef2f2; }
+            th, td { border: 0.5pt solid #cbd5e1; padding: 4px; }
+        </style></head><body>';
+
+        foreach ($employees as $employee) {
+            $empRecords = $recordsByEmployee->get($employee->id, collect());
+            
+            $html .= '<table>';
+            $html .= '<tr><th colspan="12" style="text-align:left; font-size:14pt;">' . $employee->last_name . ', ' . $employee->first_name . ' (' . $employee->employee_code . ')</th></tr>';
+            $html .= '<tr><th colspan="12" style="text-align:left;">Department: ' . ($employee->department->name ?? "N/A") . ' | Period: ' . $dateFrom->format('M d, Y') . ' - ' . $dateTo->format('M d, Y') . '</th></tr>';
+            
+            $html .= '<tr class="header">
+                <th>Date</th>
+                <th>AM In</th>
+                <th>AM Out</th>
+                <th>PM In</th>
+                <th>PM Out</th>
+                <th>Missed</th>
+                <th>Late AM</th>
+                <th>Late PM</th>
+                <th>Total Late</th>
+                <th>UT</th>
+                <th>OT</th>
+                <th>Status</th>
+            </tr>';
+
+            $totalLate = 0;
+            $totalUT = 0;
+            $totalOT = 0;
+            $totalMissed = 0;
+            $totalAbsences = 0;
+
+            foreach ($empRecords as $rec) {
+                $status = $rec->status ?? "";
+                $isAbsent = str_contains(strtolower($status), "absent") && !str_contains(strtolower($status), "holiday");
+                $rowClass = $isAbsent ? 'class="absent"' : '';
+                
+                $html .= '<tr ' . $rowClass . '>';
+                $html .= '<td class="date">' . $rec->attendance_date->format('Y-m-d') . '</td>';
+                $html .= '<td class="text">' . ($rec->time_in_am ?? "—") . '</td>';
+                $html .= '<td class="text">' . ($rec->time_out_lunch ?? "—") . '</td>';
+                $html .= '<td class="text">' . ($rec->time_in_pm ?? "—") . '</td>';
+                $html .= '<td class="text">' . ($rec->time_out_pm ?? "—") . '</td>';
+                $html .= '<td>' . ($rec->missed_logs_count ?: "—") . '</td>';
+                $html .= '<td>' . ($rec->late_minutes_am ?: "—") . '</td>';
+                $html .= '<td>' . ($rec->late_minutes_pm ?: "—") . '</td>';
+                $html .= '<td class="late">' . ($rec->total_late_minutes ?: "—") . '</td>';
+                $html .= '<td>' . ($rec->undertime_minutes ?: "—") . '</td>';
+                $html .= '<td>' . ($rec->overtime_minutes ?: "—") . '</td>';
+                $html .= '<td>' . $status . '</td>';
+                $html .= '</tr>';
+
+                $totalLate += $rec->total_late_minutes;
+                $totalUT += $rec->undertime_minutes;
+                $totalOT += $rec->overtime_minutes;
+                $totalMissed += $rec->missed_logs_count;
+                if ($isAbsent) $totalAbsences++;
+            }
+
+            $html .= '<tr class="summary">';
+            $html .= '<td colspan="5" style="text-align:right;">TOTALS</td>';
+            $html .= '<td>' . $totalMissed . '</td>';
+            $html .= '<td></td><td></td>';
+            $html .= '<td>' . $totalLate . '</td>';
+            $html .= '<td>' . $totalUT . '</td>';
+            $html .= '<td>' . $totalOT . '</td>';
+            $html .= '<td>' . ($totalAbsences > 0 ? $totalAbsences . " absent" : "") . '</td>';
+            $html .= '</tr>';
+            $html .= '</table><br>';
+        }
+
+        $html .= '</body></html>';
+
+        return response($html)
+            ->header('Content-Type', 'application/vnd.ms-excel')
+            ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->header('Cache-Control', 'max-age=0');
+    }
+
+    /**
+     * Export violation summary to Excel matching the user's requested format.
+     */
+    public function exportViolationSummary(Request $request)
+    {
+        $request->validate([
+            'dateFrom' => 'required|date',
+            'dateTo'   => 'required|date|after_or_equal:dateFrom',
+            'employee_ids' => 'nullable|array',
+        ]);
+
+        $dateFrom = \Carbon\Carbon::parse($request->dateFrom)->startOfDay();
+        $dateTo   = \Carbon\Carbon::parse($request->dateTo)->endOfDay();
+        $employeeIds = $request->employee_ids;
+
+        $query = \App\Models\AttendanceRecord::with(['employee.department'])
+            ->join('employees', 'attendance_records.employee_id', '=', 'employees.id')
+            ->select('attendance_records.*')
+            ->whereBetween('attendance_date', [$dateFrom->toDateString(), $dateTo->toDateString()])
+            ->where(function($q) {
+                $q->where('total_late_minutes', '>', 0)
+                  ->orWhere('status', 'like', '%Absent%')
+                  ->orWhere('missed_logs_count', '>', 0)
+                  ->orWhere('undertime_minutes', '>', 0);
+            });
+
+        if (!empty($employeeIds)) {
+            $query->whereIn('employee_id', $employeeIds);
+        }
+
+        $records = $query->orderBy('employees.last_name')
+            ->orderBy('employees.first_name')
+            ->orderBy('attendance_date')
+            ->get();
+
+        $filename = "Violation_Summary_{$dateFrom->format('Ymd')}_{$dateTo->format('Ymd')}.xls";
+
+        $html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+        $html .= '<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8">';
+        $html .= '<style>
+            .text { mso-number-format:"\@"; }
+            .date { mso-number-format:"Short Date"; }
+            .header { background-color: #f1f5f9; color: #0f172a; font-weight: bold; border-bottom: 2px solid #cbd5e1; }
+            th, td { border: 0.5pt solid #cbd5e1; padding: 6px; font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; font-size: 10pt; }
+        </style></head><body>';
+
+        $html .= '<table>';
+        $html .= '<thead><tr class="header">
+            <th>Period Covered</th>
+            <th>Employee Name</th>
+            <th>Employee ID</th>
+            <th>Department</th>
+            <th>Date of Incident</th>
+            <th>Violation Type</th>
+            <th>Description of Violation</th>
+            <th>Policy Reference</th>
+            <th>Action Taken</th>
+            <th>Issued By</th>
+            <th>Status (Open/Closed)</th>
+            <th>Remarks</th>
+        </tr></thead><tbody>';
+
+        $periodLabel = $dateFrom->format('Y-m-d') . ' to ' . $dateTo->format('Y-m-d');
+
+        // First, collect all incidents to know the total row count for the Period Covered column
+        $groupedIncidents = [];
+        $totalIncidentRows = 0;
+
+        foreach ($records->groupBy('employee_id') as $employeeId => $empRecords) {
+            $emp = $empRecords->first()->employee;
+            if (!$emp) continue;
+
+            $allIncidents = [];
+            foreach ($empRecords as $rec) {
+                // Tardiness
+                if ($rec->total_late_minutes > 0) {
+                    $allIncidents[] = [
+                        'date' => $rec->attendance_date->format('Y-m-d'),
+                        'type' => 'Tardiness',
+                        'desc' => 'Late for work for ' . $rec->total_late_minutes . ' minutes' . 
+                                  ($rec->late_minutes_am ? ' (AM: ' . $rec->late_minutes_am . 'm)' : '') . 
+                                  ($rec->late_minutes_pm ? ' (PM: ' . $rec->late_minutes_pm . 'm)' : ''),
+                        'policy' => 'Habitual Tardiness',
+                        'notes' => $rec->notes
+                    ];
+                }
+
+                // Absenteeism
+                if (str_contains(strtolower($rec->status), 'absent') && !str_contains(strtolower($rec->status), 'holiday')) {
+                    $allIncidents[] = [
+                        'date' => $rec->attendance_date->format('Y-m-d'),
+                        'type' => 'Absenteeism',
+                        'desc' => $rec->status ?: 'Unexcused Absence',
+                        'policy' => 'Absences',
+                        'notes' => $rec->notes
+                    ];
+                }
+
+                // Missed Logs
+                if ($rec->missed_logs_count > 0) {
+                    $allIncidents[] = [
+                        'date' => $rec->attendance_date->format('Y-m-d'),
+                        'type' => 'Missed Log',
+                        'desc' => 'Failed to record ' . $rec->missed_logs_count . ' log(s) for the day',
+                        'policy' => 'Improper Logs',
+                        'notes' => $rec->notes
+                    ];
+                }
+
+                // Undertime
+                if ($rec->undertime_minutes > 5) {
+                    $allIncidents[] = [
+                        'date' => $rec->attendance_date->format('Y-m-d'),
+                        'type' => 'Undertime',
+                        'desc' => 'Left work ' . $rec->undertime_minutes . ' minutes early',
+                        'policy' => 'Undertime',
+                        'notes' => $rec->notes
+                    ];
+                }
+            }
+
+            if (!empty($allIncidents)) {
+                $groupedIncidents[] = [
+                    'employee' => $emp,
+                    'incidents' => $allIncidents,
+                    'count' => count($allIncidents)
+                ];
+                $totalIncidentRows += count($allIncidents);
+            }
+        }
+
+        $globalIndex = 0;
+        foreach ($groupedIncidents as $groupIndex => $group) {
+            $emp = $group['employee'];
+            $rowCount = $group['count'];
+
+            foreach ($group['incidents'] as $index => $inc) {
+                $html .= '<tr>';
+                
+                // 1. Period Covered - Merged for the WHOLE report
+                if ($globalIndex === 0) {
+                    $html .= '<td rowspan="' . $totalIncidentRows . '" style="vertical-align:middle; text-align:center; background-color:#f8fafc;">' . $periodLabel . '</td>';
+                }
+
+                // 2. Employee Details - Merged per employee
+                if ($index === 0) {
+                    $html .= '<td rowspan="' . $rowCount . '" style="vertical-align:middle; text-align:center;">' . $emp->last_name . ', ' . $emp->first_name . '</td>';
+                    $html .= '<td rowspan="' . $rowCount . '" style="vertical-align:middle; text-align:center;" class="text">' . $emp->employee_code . '</td>';
+                    $html .= '<td rowspan="' . $rowCount . '" style="vertical-align:middle; text-align:center;">' . ($emp->department->name ?? "N/A") . '</td>';
+                }
+
+                $html .= '<td class="date">' . $inc['date'] . '</td>';
+                $html .= '<td>' . $inc['type'] . '</td>';
+                $html .= '<td>' . $inc['desc'] . '</td>';
+                $html .= '<td>' . $inc['policy'] . '</td>';
+                $html .= '<td>Written Warning</td>';
+                $html .= '<td>HR Officer</td>';
+                $html .= '<td>' . htmlspecialchars($request->input('status', 'Open')) . '</td>';
+                $html .= '<td>' . ($inc['notes'] ?: "") . '</td>';
+                $html .= '</tr>';
+                
+                $globalIndex++;
+            }
+        }
+
+        if (empty($groupedIncidents)) {
+            $html .= '<tr><td colspan="12" style="text-align:center;">No violations found for the selected period.</td></tr>';
+        }
+
+        $html .= '</tbody></table></body></html>';
+
+        return response($html)
+            ->header('Content-Type', 'application/vnd.ms-excel')
+            ->header('Content-Disposition', 'attachment; filename="' . $filename . '"')
+            ->header('Cache-Control', 'max-age=0');
     }
 }

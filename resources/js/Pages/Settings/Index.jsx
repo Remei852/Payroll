@@ -38,7 +38,7 @@ const tabs = [
     },
 ];
 
-export default function Settings({ workSchedules = [], scheduleOverrides = [], departments = [], flash }) {
+export default function Settings({ workSchedules = [], scheduleOverrides = [], departments = [], gracePeriodSettings = {}, flash }) {
     const [activeTab, setActiveTab] = useState('work-schedules');
 
     return (
@@ -83,7 +83,7 @@ export default function Settings({ workSchedules = [], scheduleOverrides = [], d
             {/* Tab content */}
             <div>
                 {activeTab === 'work-schedules' && (
-                    <WorkSchedulesTab workSchedules={workSchedules} departments={departments} flash={flash} />
+                    <WorkSchedulesTab workSchedules={workSchedules} departments={departments} gracePeriodSettings={gracePeriodSettings} flash={flash} />
                 )}
                 {activeTab === 'schedule-overrides' && (
                     <ScheduleOverridesTab scheduleOverrides={scheduleOverrides} departments={departments} workSchedules={workSchedules} flash={flash} />

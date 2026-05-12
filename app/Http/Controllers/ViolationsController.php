@@ -3,7 +3,6 @@
 namespace App\Http\Controllers;
 
 use App\Models\AttendanceViolation;
-use App\Models\Department;
 use App\Models\DepartmentGracePeriodSettings;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -83,7 +82,7 @@ class ViolationsController extends Controller
             $halfDays      = $empRecords->filter(fn($r) => str_contains($r->status ?? '', 'Half Day'))->count();
             $lateMinutes   = $empRecords->sum('total_late_minutes');
             $lateFrequency = $empRecords->filter(fn($r) => ($r->total_late_minutes ?? 0) > 0)->count();
-            $missedLogs    = $empRecords->filter(fn($r) => ($r->missed_logs_count ?? 0) > 0 && !str_contains($r->status ?? '', 'Absent'))->count();
+            $missedLogs    = $empRecords->filter(fn($r) => ($r->missed_logs_count ?? 0) > 0 && (!str_contains($r->status ?? '', 'Absent') || str_contains($r->status ?? '', 'Only 1 Log Found')))->count();
             $undertime     = $empRecords->sum('undertime_minutes');
 
             $summary[] = [
@@ -123,25 +122,22 @@ class ViolationsController extends Controller
 
         // ── Multiple raw logs per day ──────────────────────────────────────
         // Find employee+date combinations with more than 4 biometric logs.
-        // These are ambiguous and may need manual review.
-        // Uses PostgreSQL-compatible syntax (STRING_AGG, CAST AS DATE, TO_CHAR).
+        // Uses SQLite-compatible syntax (DATE(), strftime).
         $logsQuery = \App\Models\AttendanceLog::query()
             ->select(
                 'employee_code',
-                DB::raw("CAST(log_datetime AS DATE) as log_date"),
-                DB::raw("COUNT(*) as log_count"),
-                DB::raw("STRING_AGG(TO_CHAR(log_datetime, 'HH24:MI:SS'), ',' ORDER BY log_datetime) as times"),
-                DB::raw("STRING_AGG(log_type, ',' ORDER BY log_datetime) as types")
+                DB::raw("DATE(log_datetime) as log_date"),
+                DB::raw("COUNT(*) as log_count")
             )
-            ->groupBy('employee_code', DB::raw("CAST(log_datetime AS DATE)"))
+            ->groupBy('employee_code', DB::raw("DATE(log_datetime)"))
             ->havingRaw("COUNT(*) > 4")
             ->orderBy('log_date', 'desc');
 
         if ($request->filled('start_date')) {
-            $logsQuery->whereRaw("CAST(log_datetime AS DATE) >= ?", [$request->input('start_date')]);
+            $logsQuery->whereRaw("DATE(log_datetime) >= ?", [$request->input('start_date')]);
         }
         if ($request->filled('end_date')) {
-            $logsQuery->whereRaw("CAST(log_datetime AS DATE) <= ?", [$request->input('end_date')]);
+            $logsQuery->whereRaw("DATE(log_datetime) <= ?", [$request->input('end_date')]);
         }
         if ($request->filled('search')) {
             $logsQuery->where('employee_code', 'like', '%' . $request->input('search') . '%');
@@ -160,15 +156,25 @@ class ViolationsController extends Controller
             $employeeLookup = $employeeLookup->filter(fn($e) => $e->department_id === $deptId);
         }
 
+        // For each employee+date with >4 logs, fetch the individual log times
         $multipleLogs = $rawMultiple
             ->filter(fn($row) => isset($employeeLookup[$row->employee_code]))
             ->groupBy('employee_code')
             ->map(function ($rows, $code) use ($employeeLookup) {
-                $emp   = $employeeLookup[$code];
-                $dates = $rows->map(function ($row) {
-                    $times = explode(',', $row->times);
-                    $types = explode(',', $row->types);
-                    $logs  = array_map(fn($t, $tp) => ['time' => $t, 'type' => strtoupper($tp)], $times, $types);
+                $emp = $employeeLookup[$code];
+
+                $dates = $rows->map(function ($row) use ($code) {
+                    // Fetch individual logs for this employee+date (SQLite compatible)
+                    $individualLogs = \App\Models\AttendanceLog::where('employee_code', $code)
+                        ->whereRaw("DATE(log_datetime) = ?", [$row->log_date])
+                        ->orderBy('log_datetime')
+                        ->get(['log_datetime', 'log_type']);
+
+                    $logs = $individualLogs->map(fn($l) => [
+                        'time' => \Carbon\Carbon::parse($l->log_datetime)->format('H:i:s'),
+                        'type' => strtoupper($l->log_type ?? 'IN'),
+                    ])->toArray();
+
                     return [
                         'log_date'  => $row->log_date,
                         'log_count' => (int) $row->log_count,
@@ -426,7 +432,7 @@ class ViolationsController extends Controller
     /**
      * Update grace period settings for a department.
      */
-    public function updateGracePeriodSettings(Request $request, int $departmentId): JsonResponse
+    public function updateGracePeriodSettings(Request $request, int $departmentId): RedirectResponse
     {
         $request->validate([
             'cumulative_tracking_enabled' => ['required', 'boolean'],
@@ -448,16 +454,9 @@ class ViolationsController extends Controller
                 ]
             );
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Grace period settings updated successfully.',
-                'settings' => $settings,
-            ]);
+            return redirect()->back()->with('success', 'Grace period settings updated successfully.');
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update grace period settings: ' . $e->getMessage(),
-            ], 500);
+            return redirect()->back()->with('error', 'Failed to update grace period settings: ' . $e->getMessage());
         }
     }
 }

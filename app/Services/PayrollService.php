@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AttendanceRecord;
+use App\Models\DepartmentGracePeriodSettings;
 use App\Models\Employee;
 use App\Models\Payroll;
 use App\Models\PayrollItem;
@@ -233,10 +234,40 @@ class PayrollService
         }
 
         // Calculate deductions
-        // Apply monthly late allowance: subtract the allowed minutes before computing penalty
         $schedule = $employee->department?->workSchedule;
-        $monthlyAllowance = $schedule ? ($schedule->monthly_late_allowance_minutes ?? 0) : 0;
-        $billableLateMinutes = max(0, $totalLateMinutes - $monthlyAllowance);
+
+        $graceSettings = null;
+        if ($employee->department_id) {
+            $graceSettings = DepartmentGracePeriodSettings::where('department_id', $employee->department_id)->first();
+        }
+
+        $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
+
+        if ($graceBankEnabled && $period) {
+            $periodGraceBankMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? DepartmentGracePeriodSettings::DEFAULT_GRACE_PERIOD_MINUTES);
+
+            $graceCoveredMinutes = min(max(0, $totalLateMinutes), max(0, $periodGraceBankMinutes));
+            $billableLateMinutes = max(0, $totalLateMinutes - $graceCoveredMinutes);
+        } else {
+            $dailyGraceMinutes = $graceSettings 
+                ? (int) ($graceSettings->daily_grace_minutes ?? DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
+                : DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES;
+
+            $billableLateMinutes = 0;
+            foreach ($attendanceRecords as $record) {
+                $lateAm = (int) ($record->late_minutes_am ?? 0);
+                $latePm = (int) ($record->late_minutes_pm ?? 0);
+
+                // If lateAm/latePm is already 0 (was within grace period), this adds 0.
+                // If it's > 0 (exceeded grace period), it deducts the grace period to find the billable amount.
+                if ($lateAm > 0) {
+                    $billableLateMinutes += max(0, $lateAm - $dailyGraceMinutes);
+                }
+                if ($latePm > 0) {
+                    $billableLateMinutes += max(0, $latePm - $dailyGraceMinutes);
+                }
+            }
+        }
 
         $latePenalty = round(($billableLateMinutes / 60) * $hourlyRate, 2);
         $undertimePenalty = round(($totalUndertimeMinutes / 60) * $hourlyRate, 2);
@@ -244,9 +275,7 @@ class PayrollService
         $deductions = [];
 
         if ($latePenalty > 0) {
-            $category = $monthlyAllowance > 0
-                ? "Late Penalty (after {$monthlyAllowance}min allowance)"
-                : 'Late Penalty';
+            $category = 'Late Penalty';
             $deductions[] = [
                 'category' => $category,
                 'amount' => $latePenalty,

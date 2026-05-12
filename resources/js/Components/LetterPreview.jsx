@@ -5,7 +5,7 @@ import ViolationBreakdown from './ViolationBreakdown';
 const LetterPreview = forwardRef(({ data }, ref) => {
     const [letterContent, setLetterContent] = useState({
         title: 'MEMORANDUM',
-        opening: `This memorandum serves as a formal notice regarding attendance violations observed in your employment record.`,
+        opening: `This notice serves as a formal notice regarding attendance violations observed in your employment record.`,
         actionRequired: `You are hereby required to:
 1. Report to the Human Resources office within five (5) working days from receipt of this memorandum
 2. Submit a written explanation regarding the attendance violations listed above`,

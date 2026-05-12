@@ -444,7 +444,7 @@ export default function ViolationsIndex({ summary, totals, filters, departments,
                 <ViolationLetterModal
                     isOpen={letterModal.open}
                     employeeId={letterModal.employeeId}
-                    filters={localFilters}
+                    dateFilters={{ dateFrom: localFilters.start_date, dateTo: localFilters.end_date }}
                     onClose={() => setLetterModal({ open: false, employeeId: null })}
                 />
             )}
