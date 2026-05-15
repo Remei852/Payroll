@@ -1,5 +1,64 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased text-slate-800 bg-[#F1F5F9];
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Compact Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-slate-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-400;
+  }
+
+  /* Global Transition */
+  * {
+    @apply transition-colors duration-200;
+  }
+
+  /* Refined Focus States */
+  input:focus, select:focus, textarea:focus, button:focus {
+    @apply outline-none ring-offset-2 ring-indigo-500/30;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-[#1E3A8A] px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-900/10 transition-all hover:bg-blue-800 hover:scale-[1.02] active:scale-[0.98];
+  }
+
+  .card-premium {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm ring-1 ring-slate-900/5 transition-all hover:shadow-md;
+  }
+
+  .input-premium {
+    @apply rounded-xl border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm font-medium transition-all focus:bg-white focus:border-[#1E3A8A] focus:ring-4 focus:ring-[#1E3A8A]/5;
+  }
+}
+
+/* Custom Calendar Adjustments to make it more compact */
+.react-calendar {
+  @apply !border-none !w-full !font-sans;
+}
+
+.react-calendar__tile {
+  @apply !px-2 !py-4 !min-h-[80px] !text-sm !font-medium;
+}
+
+.react-calendar__navigation button {
+  @apply !text-base !font-bold !text-[#1E3A8A] !rounded-lg hover:!bg-slate-100;
+}

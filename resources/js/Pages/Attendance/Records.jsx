@@ -1183,7 +1183,7 @@ export default function AttendanceRecords() {
     const [showDetailModal, setShowDetailModal] = useState(false);
 
     const [reviewConfirmed, setReviewConfirmed] = useState(false);
-    const [activeFile, setActiveFile] = useState(uploadedFiles[0] ?? null);
+    const [activeFile, setActiveFile] = useState(null);
     const [filters, setFilters] = useState({ search: '', department: '', dateFrom: '', dateTo: '', status: '' });
 
     const [payrollForm, setPayrollForm] = useState({
@@ -1389,27 +1389,20 @@ export default function AttendanceRecords() {
                 let adjustedLateMinutes = 0;
                 let usagesCount = 0;
                 
-                if (graceEnabled && graceBankLimitMinutes > 0 && dailyGraceMinutes > 0) {
+                if (graceEnabled && graceBankLimitMinutes > 0) {
                     const sortedRecs = [...recs].sort((a, b) => a.attendance_date.localeCompare(b.attendance_date));
                     for (let r of sortedRecs) {
                         let lateMins = r.total_late_minutes || 0;
                         if (lateMins > 0) {
-                            if (usagesCount < maxUsages && graceUsedMinutes < graceBankLimitMinutes) {
-                                const available = graceBankLimitMinutes - graceUsedMinutes;
-                                const covered = Math.min(lateMins, available);
-                                graceUsedMinutes += covered;
-                                adjustedLateMinutes += (lateMins - covered);
-                                usagesCount++;
-                            } else {
-                                adjustedLateMinutes += lateMins;
-                            }
+                            graceUsedMinutes += lateMins;
+                            usagesCount++;
                         }
                     }
                 } else {
                     adjustedLateMinutes = rawLateMinutes;
                 }
                 
-                const graceExceeded = graceEnabled && graceBankLimitMinutes > 0 && (graceUsedMinutes >= graceBankLimitMinutes || usagesCount >= maxUsages);
+                const graceExceeded = graceEnabled && graceBankLimitMinutes > 0 && (graceUsedMinutes > graceBankLimitMinutes || usagesCount > maxUsages);
 
                 return {
                     ...e,
@@ -1417,7 +1410,8 @@ export default function AttendanceRecords() {
                     total_workdays: recs.reduce((s, r) => s + (parseFloat(r.rendered) || 0), 0).toFixed(2),
                     total_absences: recs.filter(r => (r.status || '').includes('Absent') && !(r.status || '').includes('Holiday')).length +
                         recs.filter(r => (r.status || '').includes('Half Day')).length * 0.5,
-                    total_late_minutes: adjustedLateMinutes,
+                    total_late_minutes: rawLateMinutes,
+                    billable_late_minutes: adjustedLateMinutes,
                     raw_late_minutes: rawLateMinutes,
                     total_undertime_minutes: recs.reduce((s, r) => s + (r.undertime_minutes || 0), 0),
                     total_overtime_minutes: recs.reduce((s, r) => s + (r.overtime_minutes || 0), 0),

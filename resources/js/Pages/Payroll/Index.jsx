@@ -11,19 +11,19 @@ function PeriodTable({ title, periods, selected, onToggle, onToggleAll, onDelete
     const selectedHere = selected.filter(id => periods.some(p => p.id === id));
 
     return (
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             {/* Table header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5">
-                <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50/50">
+                <h3 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{title}</h3>
                 {selectedHere.length > 0 && (
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500">{selectedHere.length} selected</span>
+                    <div className="flex items-center gap-3">
+                        <span className="text-[10px] font-bold text-[#1E3A8A] uppercase tracking-widest">{selectedHere.length} Selected</span>
                         <button onClick={() => onToggle(null, true)}
-                            className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 transition">
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:bg-white transition-all uppercase tracking-widest active:scale-95">
                             Clear
                         </button>
                         <button onClick={() => onBulkDelete(selectedHere)} disabled={deleting}
-                            className="inline-flex items-center gap-1 rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 transition">
+                            className="inline-flex items-center gap-1 rounded-lg bg-rose-600 px-3 py-1.5 text-[10px] font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition-all uppercase tracking-widest shadow-lg shadow-rose-200 active:scale-95">
                             {deleting ? 'Deleting…' : `Delete ${selectedHere.length}`}
                         </button>
                     </div>
@@ -31,70 +31,71 @@ function PeriodTable({ title, periods, selected, onToggle, onToggleAll, onDelete
             </div>
 
             {periods.length === 0 ? (
-                <p className="px-5 py-8 text-center text-sm text-slate-400">{emptyMsg}</p>
+                <p className="px-6 py-12 text-center text-[11px] font-medium text-slate-400">{emptyMsg}</p>
             ) : (
-                <table className="min-w-full text-sm">
-                    <thead className="bg-[#1E3A8A] text-xs uppercase text-white">
-                        <tr>
-                            <th className="px-4 py-3 w-10">
-                                {deletable.length > 0 && (
-                                    <input type="checkbox" checked={allSelected}
-                                        onChange={() => onToggleAll(deletable, allSelected)}
-                                        className="rounded border-white/50 bg-transparent accent-white cursor-pointer" />
-                                )}
-                            </th>
-                            <th className="px-5 py-3 text-left font-medium">Department</th>
-                            <th className="px-5 py-3 text-left font-medium">Period</th>
-                            <th className="px-5 py-3 text-left font-medium">Payroll Date</th>
-                            <th className="px-5 py-3 text-center font-medium">Employees</th>
-                            <th className="px-5 py-3 text-right font-medium">Net Pay</th>
-                            <th className="px-5 py-3 text-center font-medium">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                        {periods.map(period => {
-                            const isDeletable = period.status === 'OPEN';
-                            const isChecked = selected.includes(period.id);
-                            const totalNet = period.payrolls_sum_net_pay ?? 0;
-                            const empCount = period.payrolls_count ?? '—';
+                <div className="overflow-x-auto">
+                    <table className="min-w-full">
+                        <thead className="bg-[#1E3A8A] text-[9px] font-bold uppercase text-white tracking-widest">
+                            <tr>
+                                <th className="px-4 py-4 w-10">
+                                    {deletable.length > 0 && (
+                                        <input type="checkbox" checked={allSelected}
+                                            onChange={() => onToggleAll(deletable, allSelected)}
+                                            className="h-4 w-4 rounded border-white/50 bg-transparent accent-white cursor-pointer" />
+                                    )}
+                                </th>
+                                <th className="px-6 py-4 text-left">Department</th>
+                                <th className="px-6 py-4 text-left">Period</th>
+                                <th className="px-6 py-4 text-left">Payroll Date</th>
+                                <th className="px-6 py-4 text-center">Employees</th>
+                                <th className="px-6 py-4 text-right">Net Pay</th>
+                                <th className="px-6 py-4 text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 text-[11px] font-medium">
+                            {periods.map(period => {
+                                const isDeletable = period.status === 'OPEN';
+                                const isChecked = selected.includes(period.id);
+                                const totalNet = period.payrolls_sum_net_pay ?? 0;
+                                const empCount = period.payrolls_count ?? '—';
 
-                            return (
-                                <tr key={period.id} className={`transition-colors ${isChecked ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
-                                    <td className="px-4 py-3.5 text-center">
-                                        {isDeletable && (
-                                            <input type="checkbox" checked={isChecked} onChange={() => onToggle(period.id)}
-                                                className="rounded cursor-pointer accent-[#1E3A8A]" />
-                                        )}
-                                    </td>
-                                    <td className="px-5 py-3.5 font-medium text-slate-900">{period.department?.name ?? '—'}</td>
-                                    <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap">
-                                        {fmtDate(period.start_date)}
-                                        <span className="mx-1.5 text-slate-300">→</span>
-                                        {fmtDate(period.end_date)}
-                                    </td>
-                                    <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">{fmtDate(period.payroll_date)}</td>
-                                    <td className="px-5 py-3.5 text-center text-slate-600">{empCount}</td>
-                                    <td className="px-5 py-3.5 text-right font-semibold text-slate-800">{php(totalNet)}</td>
-                                    <td className="px-5 py-3.5 text-center">
-                                        <div className="flex items-center justify-center gap-1.5">
-                                            <Link href={route('admin.payroll.period', period.id)}
-                                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-[#1E3A8A] hover:text-[#1E3A8A] transition">
-                                                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
-                                                View
-                                            </Link>
+                                return (
+                                    <tr key={period.id} className={`transition-colors ${isChecked ? 'bg-rose-50/50' : 'hover:bg-slate-50/50'}`}>
+                                        <td className="px-4 py-4 text-center">
                                             {isDeletable && (
-                                                <button onClick={() => onDelete(period.id)}
-                                                    className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-400 hover:border-red-200 hover:bg-red-50 hover:text-red-500 transition" title="Delete">
-                                                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                                </button>
+                                                <input type="checkbox" checked={isChecked} onChange={() => onToggle(period.id)}
+                                                    className="h-4 w-4 rounded cursor-pointer accent-[#1E3A8A]" />
                                             )}
-                                        </div>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
+                                        </td>
+                                        <td className="px-6 py-4 font-bold text-slate-800">{period.department?.name ?? '—'}</td>
+                                        <td className="px-6 py-4 text-slate-500 whitespace-nowrap">
+                                            {fmtDate(period.start_date)}
+                                            <span className="mx-2 opacity-30">→</span>
+                                            {fmtDate(period.end_date)}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-500 whitespace-nowrap">{fmtDate(period.payroll_date)}</td>
+                                        <td className="px-6 py-4 text-center text-slate-600">{empCount}</td>
+                                        <td className="px-6 py-4 text-right font-bold text-slate-800">{php(totalNet)}</td>
+                                        <td className="px-6 py-4 text-center">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <Link href={route('admin.payroll.period', period.id)}
+                                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:border-[#1E3A8A] hover:text-[#1E3A8A] transition-all hover:shadow-sm active:scale-95">
+                                                    View
+                                                </Link>
+                                                {isDeletable && (
+                                                    <button onClick={() => onDelete(period.id)}
+                                                        className="rounded-xl border border-slate-200 bg-white p-2 text-slate-400 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-500 transition-all active:scale-95" title="Delete">
+                                                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
             )}
         </div>
     );
@@ -151,28 +152,32 @@ export default function PayrollIndex({ periods }) {
         <AdminLayout title="Payroll">
             <Head title="Payroll" />
 
-            <div className="mb-6">
-                <h2 className="text-lg font-semibold text-slate-800">Payroll</h2>
-                <p className="mt-0.5 text-sm text-slate-500">Manage payroll periods and employee payslips</p>
+            <div className="mb-8 px-1">
+                <p className="text-[11px] font-bold text-[#1E3A8A] uppercase tracking-widest">
+                    Payroll Management
+                </p>
+                <p className="mt-1.5 text-[13px] font-medium text-slate-500 max-w-2xl">
+                    Manage payroll periods and employee payslips.
+                </p>
             </div>
 
             {/* Summary cards */}
-            <div className="mb-6 grid grid-cols-3 gap-4">
+            <div className="mb-8 grid grid-cols-3 gap-5">
                 {[
                     { label: 'Total Periods', value: periods.total,  sub: null,                  color: 'text-slate-800',  bg: 'bg-slate-100' },
                     { label: 'Open',          value: open.length,    sub: open.length > 0 ? php(totalNetOpen) + ' total net' : null,   color: 'text-blue-700',  bg: 'bg-blue-100' },
-                    { label: 'Closed',        value: closed.length,  sub: closed.length > 0 ? php(totalNetClosed) + ' total net' : null, color: 'text-green-700', bg: 'bg-green-100' },
+                    { label: 'Closed',        value: closed.length,  sub: closed.length > 0 ? php(totalNetClosed) + ' total net' : null, color: 'text-emerald-700', bg: 'bg-emerald-100' },
                 ].map(c => (
-                    <div key={c.label} className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-                        <p className="text-xs font-medium text-slate-500">{c.label}</p>
-                        <p className={`mt-1 text-xl font-bold ${c.color}`}>{c.value}</p>
-                        {c.sub && <p className="mt-0.5 text-xs text-slate-400">{c.sub}</p>}
+                    <div key={c.label} className="rounded-2xl border border-slate-200 bg-white px-6 py-5 shadow-sm hover:shadow-md transition-all">
+                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">{c.label}</p>
+                        <p className={`mt-2 text-2xl font-bold ${c.color} leading-none`}>{c.value}</p>
+                        {c.sub && <p className="mt-2 text-[10px] font-medium text-slate-400">{c.sub}</p>}
                     </div>
                 ))}
             </div>
 
             {/* Open periods */}
-            <div className="mb-6">
+            <div className="mb-8">
                 <PeriodTable
                     title="Open Periods"
                     periods={open}
@@ -201,16 +206,16 @@ export default function PayrollIndex({ periods }) {
 
             {/* Pagination */}
             {periods.last_page > 1 && (
-                <div className="mt-4 flex items-center justify-between">
-                    <p className="text-xs text-slate-500">Showing {periods.from}–{periods.to} of {periods.total}</p>
-                    <div className="flex items-center gap-1">
+                <div className="mt-6 flex items-center justify-between px-2">
+                    <p className="text-[11px] font-medium text-slate-500">Showing {periods.from}–{periods.to} of {periods.total}</p>
+                    <div className="flex items-center gap-1.5">
                         {periods.links.map((link, i) => (
                             <button key={i} disabled={!link.url}
                                 onClick={() => link.url && router.get(link.url, {}, { preserveState: true })}
-                                className={`min-w-[2rem] rounded-lg px-2.5 py-1 text-xs font-medium transition ${
-                                    link.active ? 'bg-[#1E3A8A] text-white'
-                                    : link.url ? 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
-                                    : 'cursor-not-allowed text-slate-300'
+                                className={`min-w-[2.5rem] h-9 rounded-xl px-3 py-1 text-[11px] font-bold transition-all ${
+                                    link.active ? 'bg-[#1E3A8A] text-white shadow-lg shadow-blue-900/20'
+                                    : link.url ? 'border border-slate-200 bg-white text-slate-600 hover:border-[#1E3A8A] hover:text-[#1E3A8A]'
+                                    : 'cursor-not-allowed text-slate-200 border-slate-100'
                                 }`}
                                 dangerouslySetInnerHTML={{ __html: link.label }}
                             />

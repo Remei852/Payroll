@@ -231,7 +231,7 @@ class AttendanceService
         $inferredLogs = $this->inferLogTypesFromTime($uniqueLogs, $date);
 
         // STEP 5: Assign logs to time slots based on inferred types
-        $timeSlots = $this->assignLogsToTimeSlotsFromInferred($inferredLogs, $date);
+        $timeSlots = $this->assignLogsToTimeSlotsFromInferred($inferredLogs, $date, $schedule);
 
         // STEP 6: Pair IN-OUT and compute durations
         $pairs = $this->pairInOutLogs($inferredLogs);
@@ -842,7 +842,7 @@ class AttendanceService
      * Assign inferred logs to time slots
      * Similar to assignLogsToTimeSlots but works with inferred types
      */
-    private function assignLogsToTimeSlotsFromInferred(array $logs, Carbon $date): array
+    private function assignLogsToTimeSlotsFromInferred(array $logs, Carbon $date, WorkSchedule $schedule): array
     {
         $slots = [
             'morning_in' => null,
@@ -851,8 +851,13 @@ class AttendanceService
             'afternoon_out' => null,
         ];
 
-        // Lunch boundary: 12:45 PM (765 minutes from midnight)
-        $lunchBoundary = 765;
+        // Lunch boundary logic: 15 minutes before the break ends
+        $breakEndTime = $schedule->break_end_time ?? self::LUNCH_BREAK_END;
+        $lunchInWindowStart = Carbon::parse($date->format('Y-m-d') . ' ' . $breakEndTime)->subMinutes(15);
+        $lunchInWindowMinutes = ($lunchInWindowStart->hour * 60) + $lunchInWindowStart->minute;
+
+        // General lunch boundary for fallback OUT logs (keep as 12:45 PM or middle of break)
+        $lunchBoundary = 765; 
 
         foreach ($logs as $log) {
             $time = $log['datetime'];
@@ -865,8 +870,8 @@ class AttendanceService
                 if ($totalMinutes >= 360 && $totalMinutes < 720 && !$slots['morning_in']) {
                     $slots['morning_in'] = $log['time'];
                 }
-                // Lunch IN: 12:45 PM - 2:00 PM (first IN in lunch-return window)
-                elseif ($totalMinutes >= $lunchBoundary && $totalMinutes < 840 && !$slots['lunch_in']) {
+                // Lunch IN: Starting 15 minutes before break ends up to 2:00 PM
+                elseif ($totalMinutes >= $lunchInWindowMinutes && $totalMinutes < 840 && !$slots['lunch_in']) {
                     $slots['lunch_in'] = $log['time'];
                 }
                 // Late lunch IN: after 2:00 PM but no lunch_in yet
@@ -1322,8 +1327,8 @@ class AttendanceService
         }
 
         $breakStart = Carbon::parse($date->format('Y-m-d') . ' ' . $schedule->break_start_time);
-        // Allow up to 5 minutes early lunch-out (e.g. 11:55 when break is 12:00)
-        $allowance  = max($schedule->undertime_allowance_minutes ?? 5, 5);
+        // Use configured undertime allowance (e.g. 5 mins)
+        $allowance  = $schedule->undertime_allowance_minutes ?? 5;
         $actualOut  = Carbon::parse($date->format('Y-m-d') . ' ' . $lunchOut);
 
         return $actualOut->lt($breakStart->copy()->subMinutes($allowance));

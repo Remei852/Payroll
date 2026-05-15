@@ -196,7 +196,6 @@ class AttendanceController extends Controller
             'dateFrom' => 'nullable|date',
             'dateTo' => 'nullable|date|after_or_equal:dateFrom',
         ]);
-
         try {
             $employee = \App\Models\Employee::with('department')->findOrFail($employeeId);
             
@@ -418,42 +417,77 @@ class AttendanceController extends Controller
             if ($employee->department_id) {
                 $graceSettings = \App\Models\DepartmentGracePeriodSettings::where('department_id', $employee->department_id)->first();
             }
+            $gracePeriodMinutes = 0;
+            if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
+                $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
+            }
             $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
             $graceBankLimitMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? 0);
             
             $dailyGraceMinutes = (int) ($graceSettings->daily_grace_minutes ?? 15);
             $maxUsages = (int) floor($graceBankLimitMinutes / max(1, $dailyGraceMinutes));
-
+            
             $sortedRecords = $records->sortBy('attendance_date');
             $graceBankUsedMinutes = 0;
             $graceUsages = 0;
-            
+            $graceBankDetails = [];
+            $graceBankDays = 0;
+            $runningTotal = 0; // Raw total late minutes
+
             foreach ($sortedRecords as $record) {
-                $late = (int) ($record->total_late_minutes ?? 0);
-                if ($late > 0) {
-                    if ($graceUsages < $maxUsages && $graceBankUsedMinutes < $graceBankLimitMinutes) {
-                        $available = $graceBankLimitMinutes - $graceBankUsedMinutes;
-                        $graceBankUsedMinutes += min($late, $available);
-                        $graceUsages++;
-                    }
+                $lateAm = (int) ($record->late_minutes_am ?? 0);
+                $latePm = (int) ($record->late_minutes_pm ?? 0);
+                $runningTotal += ($lateAm + $latePm);
+
+                // Rule: If arrival is more than 60 mins late, it's an Absence, not Tardiness for the bank
+                $lateForBank = $lateAm + $latePm;
+
+                if ($lateForBank > 0) {
+                    $graceUsages++;
+                    $graceBankUsedMinutes += $lateForBank;
+                    $graceBankDays++;
+                    $graceBankDetails[] = [
+                        'date' => $record->attendance_date->format('Y-m-d'),
+                        'dateFormatted' => $record->attendance_date->format('F j, Y'),
+                        'minutes' => $lateForBank,
+                        'accumulated' => $graceBankUsedMinutes,
+                        'beyondGrace' => $lateForBank > $gracePeriodMinutes,
+                        'time_in_am' => $record->time_in_am ? Carbon::parse($record->time_in_am)->format('g:i A') : '—',
+                        'time_out_am' => $record->time_out_lunch ? Carbon::parse($record->time_out_lunch)->format('g:i A') : '—',
+                        'time_in_pm' => $record->time_in_pm ? Carbon::parse($record->time_in_pm)->format('g:i A') : '—',
+                        'time_out_pm' => $record->time_out_pm ? Carbon::parse($record->time_out_pm)->format('g:i A') : '—',
+                    ];
                 }
             }
             
-            $totalLateMins = (int) $records->sum(fn($r) => (int) ($r->total_late_minutes ?? 0));
             $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && 
-                ($totalLateMins > $graceBankLimitMinutes || $records->filter(fn($r) => ((int)$r->total_late_minutes ?? 0) > 0)->count() > $maxUsages);
+                ($graceBankUsedMinutes > $graceBankLimitMinutes || $graceUsages > $maxUsages);
 
-            $gracePeriodMinutes = 0;
-            if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
-                $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
-            }
             $lateBeyondGraceCount = (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count();
-            $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankExceeded);
+            $habitualTardiness = $graceBankEnabled && $graceBankLimitMinutes > 0 && ($graceBankUsedMinutes > $graceBankLimitMinutes || $graceUsages > $maxUsages);
+
+            $schedule          = $employee->department?->workSchedule;
+            $scheduleStartTime = $schedule ? Carbon::parse($schedule->work_start_time)->format('g:i A') : '8:30 AM';
+            $scheduleEndTime   = $schedule ? Carbon::parse($schedule->work_end_time)->format('g:i A') : '5:30 PM';
+            $breakStartTime    = $schedule ? Carbon::parse($schedule->break_start_time)->format('g:i A') : '12:00 PM';
+            $breakEndTime      = $schedule ? Carbon::parse($schedule->break_end_time)->format('g:i A') : '1:00 PM';
+            $undertimeAllowance = $schedule ? (int)$schedule->undertime_allowance_minutes : 5;
 
             // Merge submitted content with defaults
             $submitted = $request->input('content', []);
-            $content   = array_merge($this->defaultLetterContent($scheduleStartTime, $scheduleEndTime, [], strtoupper($employee->last_name)), $submitted);
+            $content   = array_merge($this->defaultLetterContent(
+                $scheduleStartTime, 
+                $scheduleEndTime, 
+                [], 
+                strtoupper($employee->last_name),
+                $breakStartTime,
+                $breakEndTime,
+                $undertimeAllowance,
+                $graceBankEnabled,
+                $employee->department->payroll_frequency ?? 'BI-MONTHLY'
+            ), $submitted);
 
+            // Pass Grace Bank details to the view
             $data = [
                 'employee' => [
                     'code'       => $employee->employee_code,
@@ -477,7 +511,10 @@ class AttendanceController extends Controller
                     'gracePeriodMinutes' => $gracePeriodMinutes,
                     'lateBeyondGraceCount' => $lateBeyondGraceCount,
                     'habitualTardiness' => $habitualTardiness,
+                    'totalAccumulatedLate' => $runningTotal,
                 ]),
+                'graceBankDetails' => $graceBankDetails,
+                'graceBankDays' => $graceBankDays,
                 'currentDate' => $content['dateIssued'] ?: Carbon::now()->format('F j, Y'),
                 'content'     => $content,
             ];
@@ -508,10 +545,17 @@ class AttendanceController extends Controller
         }
     }
 
-    /**
-     * Default editable content for the violation letter.
-     */
-    private function defaultLetterContent(string $scheduleStartTime = '8:30 AM', string $scheduleEndTime = '5:30 PM', array $violations = [], string $employeeLastName = ''): array
+    private function defaultLetterContent(
+        string $scheduleStartTime = '8:30 AM', 
+        string $scheduleEndTime = '5:30 PM', 
+        array $violations = [], 
+        string $employeeLastName = '',
+        ?string $breakStartTime = '12:00 PM',
+        ?string $breakEndTime = '1:00 PM',
+        int $undertimeAllowance = 5,
+        bool $graceBankEnabled = false,
+        string $payrollFrequency = 'BI-MONTHLY'
+    ): array
     {
         // Build dynamic action required list based on which violations are present
         $actionItems = [
@@ -526,14 +570,15 @@ class AttendanceController extends Controller
         if (!empty($violations['lateAM']) || !empty($violations['latePM'])) {
             $actionItems[] = count($actionItems) + 1 . ". For late arrivals, explain the reason and commit to a corrective action plan.";
         }
-        if (!empty($violations['undertime'])) {
-            $actionItems[] = count($actionItems) + 1 . ". For undertime, secure prior approval for early departures or provide a valid justification.";
-        }
+        $earlyInTime   = Carbon::parse($scheduleStartTime)->subMinutes(15)->format('g:i A');
+        $pmInTime      = $breakEndTime ? Carbon::parse($breakEndTime)->subMinutes(15)->format('g:i A') : '12:45 PM';
+        $earlyOutTime  = Carbon::parse($scheduleEndTime)->subMinutes($undertimeAllowance)->format('g:i A');
+        $lunchOutTime  = $breakStartTime ? Carbon::parse($breakStartTime)->subMinutes($undertimeAllowance)->format('g:i A') : '11:55 AM';
 
         return [
             'subject'         => 'NOTICE TO EXPLAIN ',
             'greeting'        => "Greetings,\n\nDear Mr/Ms {$employeeLastName},\n\nThis notice is issued to formally inform you of the attendance irregularities recorded during the covered period, as reflected in the table below.",
-            'opening'         => "In accordance with the company’s attendance policy, all employees are expected to observe proper working hours, maintain punctuality, and complete all required daily logs and attendance requirements. The official work schedule is from {$scheduleStartTime} to {$scheduleEndTime}. Strict compliance with attendance policies is expected at all times.\n\nRecords indicate instances of tardiness, undertime, absences, incomplete logs, and/or other attendance-related concerns which may constitute violations of company policies and procedures.\n\nAs a result of these attendance irregularities, you are required to take the necessary corrective action only on the specific concern(s) indicated below and provide the appropriate explanation and/or supporting documents, if applicable.",
+            'opening'         => "In accordance with the company’s attendance policy, all employees are expected to observe proper working hours, maintain punctuality, and complete all required daily logs and attendance requirements. The official work schedule is from {$scheduleStartTime} to {$scheduleEndTime}. Please be reminded that you can clock in 15 minutes before your start/return (at {$earlyInTime} and {$pmInTime}). Additionally, clocking out {$undertimeAllowance} minutes before shift or break end (at {$earlyOutTime} and {$lunchOutTime}) is permitted. Strict compliance with attendance policies is expected at all times.\n\nRecords indicate instances of tardiness, undertime, absences, incomplete logs, and/or other attendance-related concerns which may constitute violations of company policies and procedures.\n\nAs a result of these attendance irregularities, you are required to take the necessary corrective action only on the specific concern(s) indicated below and provide the appropriate explanation and/or supporting documents, if applicable.",
             'policyParagraph' => '',
             'absenceNotice'   => 'Our records indicate that you were absent on the dates listed above. Note: Days with only one biometric log are considered as Whole Day Absent per company policy. You are required to submit a written explanation and, if applicable, supporting documentation (e.g., medical certificate).',
             'lateAMNotice'    => "Records above show that you arrived after the scheduled start time of {$scheduleStartTime}. ",
@@ -542,6 +587,28 @@ class AttendanceController extends Controller
             'undertimeNotice' => 'The instances above indicate that you left work before the end of your scheduled shift.',
             'actionRequired'  => implode("\n", $actionItems),
             'policyIntro'     => 'To remind you, below are the company policies regarding Attendance Management:',
+            'absencesPolicy'  => [
+                'rule'      => "Failure to report for work without prior approval shall be considered an unauthorized absence. Employees must secure approval before taking leave.",
+                'penalties' => "1st Offense – Written Reprimand and/or 3–9 days suspension|2nd Offense – 10–30 days suspension|3rd Offense – Termination",
+                'note'      => "Leave applications must be submitted at least five (5) days before the intended leave date, except for emergencies.\n\nTo avoid violations, employees must immediately inform their supervisor of any planned or emergency absence and submit the required leave request or supporting documents as soon as possible."
+            ],
+            'missedLogsPolicy' => [
+                'rule'      => "Improper logs include missed, incomplete, or habitual failure to properly record time-in and time-out entries (AM log in/out, PM log in/out).",
+                'penalties' => "1st Offense – Written Reprimand and/or 3–9 days suspension|2nd Offense – 10–30 days suspension|3rd Offense – Termination",
+                'note'      => ""
+            ],
+            'undertimePolicy' => [
+                'rule'      => "Leaving work before the end of the scheduled shift without prior approval and valid reason is considered undertime. Employees must seek approval at least one (1) hour before leaving to ensure work operations are not disrupted and proper endorsement is made.",
+                'penalties' => "1st Offense – Written Reprimand and/or 3–9 days suspension|2nd Offense – 10–30 days suspension|3rd Offense – Termination",
+                'note'      => "To avoid violations, employees must secure prior approval before leaving work."
+            ],
+            'tardinessPolicy' => [
+                'rule'      => ($payrollFrequency === 'WEEKLY') 
+                    ? "Being late four (4) times beyond the prescribed grace period within a cut-off period, or accumulating a total of thirty (30) minutes of tardiness within seven (7) days or a weekly cut-off period."
+                    : "Being late four (4) times beyond the prescribed grace period within a cut-off period, or accumulating a total of one (1) hour or sixty (60) minutes of tardiness within fifteen (15) days or a bi-monthly cut-off period.",
+                'penalties' => "1st Offense – Written Reprimand and/or 3–9 days suspension|2nd Offense – 10–30 days suspension|3rd Offense – Termination",
+                'note'      => ""
+            ],
             'closing'         => "Your written explanation must be submitted to the ECOTRADE Office, Hinapalanon, on or before ___________. For concerns, clarifications, or request for hearing/conference, you may coordinate directly with the office.\n\nFailure to comply within the prescribed period shall be deemed a waiver of your right to be heard, and/or repeated violations may result in further disciplinary action in accordance with company policy.\n\nThank you.",
             'preparedBy'      => 'MARK LESTER M. TO-ONG',
             'position'        => 'Operations Manager',
@@ -580,15 +647,52 @@ class AttendanceController extends Controller
             }
             $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
             $graceBankLimitMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? 0);
-            $graceBankUsedMinutes = (int) $records->sum(fn($r) => (int) ($r->total_late_minutes ?? 0));
-            $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && $graceBankUsedMinutes > $graceBankLimitMinutes;
+            $dailyGraceMinutes = (int) ($graceSettings->daily_grace_minutes ?? 15);
+            $maxUsages = (int) floor($graceBankLimitMinutes / max(1, $dailyGraceMinutes));
 
             $gracePeriodMinutes = 0;
             if ($employee->department?->workSchedule && ($employee->department->workSchedule->grace_period_enabled ?? true)) {
                 $gracePeriodMinutes = (int) ($employee->department->workSchedule->grace_period_minutes ?? 0);
             }
+
+            $sortedRecords = $records->sortBy('attendance_date');
+            $graceBankUsedMinutes = 0;
+            $graceUsages = 0;
+            $graceBankDetails = [];
+            $graceBankDays = 0;
+            $runningTotal = 0;
+
+            foreach ($sortedRecords as $record) {
+                $lateAm = (int) ($record->late_minutes_am ?? 0);
+                $latePm = (int) ($record->late_minutes_pm ?? 0);
+                $runningTotal += ($lateAm + $latePm);
+                $lateForBank = $lateAm + $latePm;
+
+                if ($lateForBank > 0) {
+                    $graceUsages++;
+                    $graceBankUsedMinutes += $lateForBank;
+                    $graceBankDays++;
+                    $graceBankDetails[] = [
+                        'date' => $record->attendance_date->format('Y-m-d'),
+                        'dateFormatted' => $record->attendance_date->format('F j, Y'),
+                        'minutes' => $lateForBank,
+                        'accumulated' => $graceBankUsedMinutes,
+                        'beyondGrace' => $lateForBank > ($gracePeriodMinutes ?? 0),
+                        'time_in_am' => $record->time_in_am ? Carbon::parse($record->time_in_am)->format('g:i A') : '—',
+                        'time_out_am' => $record->time_out_lunch ? Carbon::parse($record->time_out_lunch)->format('g:i A') : '—',
+                        'time_in_pm' => $record->time_in_pm ? Carbon::parse($record->time_in_pm)->format('g:i A') : '—',
+                        'time_out_pm' => $record->time_out_pm ? Carbon::parse($record->time_out_pm)->format('g:i A') : '—',
+                    ];
+                }
+            }
+
+            $graceBankExceeded = $graceBankEnabled && $graceBankLimitMinutes > 0 && 
+                ($graceBankUsedMinutes > $graceBankLimitMinutes || $graceUsages > $maxUsages);
+
+
             $lateBeyondGraceCount = (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count();
-            $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankUsedMinutes >= 60);
+            $habitualTardiness = $lateBeyondGraceCount >= 4 || ($graceBankEnabled && $graceBankExceeded);
+            
             $startDate = $request->dateFrom ?? $records->min('attendance_date');
             $endDate   = $request->dateTo   ?? $records->max('attendance_date');
 
@@ -613,16 +717,31 @@ class AttendanceController extends Controller
                 'scheduleStartTime' => $scheduleStartTime,
                 'scheduleEndTime' => $scheduleEndTime,
                 'violations'  => $this->buildSectionedViolations($records),
+                'graceBankDetails' => $graceBankDetails,
+                'graceBankDays' => $graceBankDays,
                 'summary'     => array_merge($this->buildViolationSummary($records), [
                     'graceBankEnabled' => $graceBankEnabled,
                     'graceBankLimitMinutes' => $graceBankLimitMinutes,
                     'graceBankUsedMinutes' => $graceBankUsedMinutes,
+                    'graceUsages'          => $graceUsages,
+                    'graceMaxUsages'       => $maxUsages,
                     'graceBankExceeded' => $graceBankExceeded,
                     'gracePeriodMinutes' => $gracePeriodMinutes,
                     'lateBeyondGraceCount' => $lateBeyondGraceCount,
                     'habitualTardiness' => $habitualTardiness,
+                    'totalAccumulatedLate' => $runningTotal,
                 ]),
-                'defaults'    => $this->defaultLetterContent($scheduleStartTime, $scheduleEndTime, $this->buildSectionedViolations($records), strtoupper($employee->last_name)),
+                'defaults'    => $this->defaultLetterContent(
+                    $scheduleStartTime, 
+                    $scheduleEndTime, 
+                    $this->buildSectionedViolations($records), 
+                    strtoupper($employee->last_name),
+                    $employee->department?->workSchedule?->break_start_time ? Carbon::parse($employee->department->workSchedule->break_start_time)->format('g:i A') : '12:00 PM',
+                    $employee->department?->workSchedule?->break_end_time ? Carbon::parse($employee->department->workSchedule->break_end_time)->format('g:i A') : '1:00 PM',
+                    (int)($employee->department?->workSchedule?->undertime_allowance_minutes ?? 5),
+                    $graceBankEnabled,
+                    $employee->department->payroll_frequency ?? 'BI-MONTHLY'
+                ),
             ]);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -674,17 +793,16 @@ class AttendanceController extends Controller
                 $maxUsages = (int) floor($graceBankLimitMinutes / max(1, $dailyGraceMinutes));
 
                 $sortedRecords = $records->sortBy('attendance_date');
+$graceBankDetails = [];
+$graceBankDays = 0;
                 $graceBankUsedMinutes = 0;
                 $graceUsages = 0;
                 
                 foreach ($sortedRecords as $record) {
                     $late = (int) ($record->total_late_minutes ?? 0);
                     if ($late > 0) {
-                        if ($graceUsages < $maxUsages && $graceBankUsedMinutes < $graceBankLimitMinutes) {
-                            $available = $graceBankLimitMinutes - $graceBankUsedMinutes;
-                            $graceBankUsedMinutes += min($late, $available);
-                            $graceUsages++;
-                        }
+                        $graceBankUsedMinutes += $late;
+                        $graceUsages++;
                     }
                 }
                 
@@ -710,8 +828,49 @@ class AttendanceController extends Controller
                     ? Carbon::parse($employee->department->workSchedule->work_end_time)->format('g:i A')
                     : '5:30 PM';
 
+                $graceBankDays = 0;
+                $runningTotal = 0; // Raw total late minutes
+                foreach ($sortedRecords as $record) {
+                    $lateAm = (int) ($record->late_minutes_am ?? 0);
+                    $latePm = (int) ($record->late_minutes_pm ?? 0);
+                    $lateForBank = $lateAm + $latePm;
+                    $runningTotal += $lateForBank;
+
+                    if ($lateForBank > 0) {
+                        $graceBankDays++;
+                        $graceBankDetails[] = [
+                            'date' => $record->attendance_date->format('Y-m-d'),
+                            'dateFormatted' => $record->attendance_date->format('F j, Y'),
+                            'minutes' => $lateForBank,
+                            'accumulated' => $runningTotal,
+                            'beyondGrace' => $lateForBank > $gracePeriodMinutes,
+                            'time_in_am' => $record->time_in_am ? Carbon::parse($record->time_in_am)->format('g:i A') : '—',
+                            'time_out_am' => $record->time_out_lunch ? Carbon::parse($record->time_out_lunch)->format('g:i A') : '—',
+                            'time_in_pm' => $record->time_in_pm ? Carbon::parse($record->time_in_pm)->format('g:i A') : '—',
+                            'time_out_pm' => $record->time_out_pm ? Carbon::parse($record->time_out_pm)->format('g:i A') : '—',
+                        ];
+                    }
+                }
+
+                $schedule          = $employee->department?->workSchedule;
+                $scheduleStartTime = $schedule ? Carbon::parse($schedule->work_start_time)->format('g:i A') : '8:30 AM';
+                $scheduleEndTime   = $schedule ? Carbon::parse($schedule->work_end_time)->format('g:i A') : '5:30 PM';
+                $breakStartTime    = $schedule ? Carbon::parse($schedule->break_start_time)->format('g:i A') : '12:00 PM';
+                $breakEndTime      = $schedule ? Carbon::parse($schedule->break_end_time)->format('g:i A') : '1:00 PM';
+                $undertimeAllowance = $schedule ? (int)$schedule->undertime_allowance_minutes : 5;
+
                 $sectionedViolations = $this->buildSectionedViolations($records);
-                $content = $this->defaultLetterContent($scheduleStartTime, $scheduleEndTime, $sectionedViolations, strtoupper($employee->last_name));
+                $content = $this->defaultLetterContent(
+                    $scheduleStartTime, 
+                    $scheduleEndTime, 
+                    $sectionedViolations, 
+                    strtoupper($employee->last_name),
+                    $breakStartTime,
+                    $breakEndTime,
+                    $undertimeAllowance,
+                    $graceBankEnabled,
+                    $employee->department->payroll_frequency ?? 'BI-MONTHLY'
+                );
 
                 $allEmployeeData[] = [
                     'employee' => [
@@ -732,11 +891,14 @@ class AttendanceController extends Controller
                         'graceBankUsedMinutes' => $graceBankUsedMinutes,
                         'graceUsages'          => $graceUsages,
                         'graceMaxUsages'       => $maxUsages,
-                        'graceBankExceeded' => $graceBankExceeded,
+                        'graceBankExceeded' => $graceBankEnabled && $graceBankLimitMinutes > 0 && ($graceBankUsedMinutes > $graceBankLimitMinutes || $graceUsages > $maxUsages),
                         'gracePeriodMinutes' => $gracePeriodMinutes,
-                        'lateBeyondGraceCount' => $lateBeyondGraceCount,
-                        'habitualTardiness' => $habitualTardiness,
+                        'lateBeyondGraceCount' => (int) $records->filter(fn($r) => (int) ($r->total_late_minutes ?? 0) > $gracePeriodMinutes)->count(),
+                        'habitualTardiness'    => $graceBankExceeded || $records->filter(fn($r) => ((int)$r->total_late_minutes ?? 0) > 0)->count() >= 4,
+                        'totalAccumulatedLate' => $runningTotal,
                     ]),
+                    'graceBankDetails' => $graceBankDetails,
+                    'graceBankDays' => $graceBankDays,
                     'currentDate' => Carbon::now()->format('F j, Y'),
                     'content'     => $content,
                 ];

@@ -243,12 +243,11 @@ class PayrollService
 
         $graceBankEnabled = (bool) ($graceSettings->cumulative_tracking_enabled ?? false);
 
-        if ($graceBankEnabled && $period) {
-            $periodGraceBankMinutes = (int) ($graceSettings->grace_period_limit_minutes ?? DepartmentGracePeriodSettings::DEFAULT_GRACE_PERIOD_MINUTES);
-
-            $graceCoveredMinutes = min(max(0, $totalLateMinutes), max(0, $periodGraceBankMinutes));
-            $billableLateMinutes = max(0, $totalLateMinutes - $graceCoveredMinutes);
+        if ($graceBankEnabled) {
+            // When Grace Bank is ON: Deduct all late minutes (no bank buffer for salary)
+            $billableLateMinutes = (int) $totalLateMinutes;
         } else {
+            // When Grace Bank is OFF: Revert to daily grace threshold (e.g. 15 mins)
             $dailyGraceMinutes = $graceSettings 
                 ? (int) ($graceSettings->daily_grace_minutes ?? DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES)
                 : DepartmentGracePeriodSettings::DEFAULT_DAILY_GRACE_MINUTES;
@@ -258,13 +257,12 @@ class PayrollService
                 $lateAm = (int) ($record->late_minutes_am ?? 0);
                 $latePm = (int) ($record->late_minutes_pm ?? 0);
 
-                // If lateAm/latePm is already 0 (was within grace period), this adds 0.
-                // If it's > 0 (exceeded grace period), it deducts the grace period to find the billable amount.
-                if ($lateAm > 0) {
-                    $billableLateMinutes += max(0, $lateAm - $dailyGraceMinutes);
+                // If lateness exceeds the grace threshold, the FULL amount is deducted
+                if ($lateAm > $dailyGraceMinutes) {
+                    $billableLateMinutes += $lateAm;
                 }
-                if ($latePm > 0) {
-                    $billableLateMinutes += max(0, $latePm - $dailyGraceMinutes);
+                if ($latePm > $dailyGraceMinutes) {
+                    $billableLateMinutes += $latePm;
                 }
             }
         }

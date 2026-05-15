@@ -47,50 +47,56 @@ export default function Settings({ workSchedules = [], scheduleOverrides = [], d
 
             {/* Flash messages */}
             {flash?.success && (
-                <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
-                    {flash.success}
+                <div className="mb-5 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 shadow-sm flex items-center gap-3">
+                    <svg className="h-4 w-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="font-medium">{flash.success}</p>
                 </div>
             )}
-            {flash?.error && (
-                <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-                    {flash.error}
+            
+            <div className="flex flex-col gap-5">
+                {/* Tab Navigation Card */}
+                <div className="card-premium p-1.5">
+                    <nav className="flex flex-wrap gap-1">
+                        {tabs.map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`flex flex-1 items-center justify-center gap-2.5 rounded-lg px-3 py-2 text-sm font-bold transition-all duration-200 ${
+                                    activeTab === tab.id
+                                        ? 'bg-[#1E3A8A] text-white shadow-md shadow-blue-900/10'
+                                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+                                }`}
+                            >
+                                <span className={`${activeTab === tab.id ? 'text-white' : 'text-slate-400'}`}>
+                                    {tab.icon}
+                                </span>
+                                <div className="text-left">
+                                    <div className="leading-tight text-[13px]">{tab.label}</div>
+                                    <div className={`mt-0.5 text-[9px] font-semibold opacity-60 hidden sm:block ${activeTab === tab.id ? 'text-blue-100' : 'text-slate-400'}`}>
+                                        {tab.id === 'work-schedules' ? 'Schedules & Grace' : 
+                                         tab.id === 'schedule-overrides' ? 'Holidays & Dates' : 
+                                         'Profile & Security'}
+                                    </div>
+                                </div>
+                            </button>
+                        ))}
+                    </nav>
                 </div>
-            )}
 
-            {/* Page header */}
-            <div className="mb-6">
-                <h2 className="text-lg font-semibold text-slate-800">Settings</h2>
-                <p className="mt-0.5 text-sm text-slate-500">Manage work schedules, holidays, and schedule overrides</p>
-            </div>
-
-            {/* Tab bar */}
-            <div className="mb-6 border-b border-slate-200">
-                <nav className="-mb-px flex gap-6">
-                    {tabs.map(tab => (
-                        <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                            className={`inline-flex items-center gap-2 border-b-2 pb-3 text-sm font-medium transition ${
-                                activeTab === tab.id
-                                    ? 'border-[#1E3A8A] text-[#1E3A8A]'
-                                    : 'border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-700'
-                            }`}>
-                            <span className={activeTab === tab.id ? 'text-[#1E3A8A]' : 'text-slate-400'}>{tab.icon}</span>
-                            {tab.label}
-                        </button>
-                    ))}
-                </nav>
-            </div>
-
-            {/* Tab content */}
-            <div>
-                {activeTab === 'work-schedules' && (
-                    <WorkSchedulesTab workSchedules={workSchedules} departments={departments} gracePeriodSettings={gracePeriodSettings} flash={flash} />
-                )}
-                {activeTab === 'schedule-overrides' && (
-                    <ScheduleOverridesTab scheduleOverrides={scheduleOverrides} departments={departments} workSchedules={workSchedules} flash={flash} />
-                )}
-                {activeTab === 'account' && (
-                    <AccountTab />
-                )}
+                {/* Content Area */}
+                <div className="min-h-[500px] animate-in fade-in duration-500">
+                    {activeTab === 'work-schedules' && (
+                        <WorkSchedulesTab workSchedules={workSchedules} departments={departments} gracePeriodSettings={gracePeriodSettings} flash={flash} />
+                    )}
+                    {activeTab === 'schedule-overrides' && (
+                        <ScheduleOverridesTab scheduleOverrides={scheduleOverrides} departments={departments} workSchedules={workSchedules} flash={flash} />
+                    )}
+                    {activeTab === 'account' && (
+                        <AccountTab />
+                    )}
+                </div>
             </div>
         </AdminLayout>
     );
