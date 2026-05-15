@@ -19,7 +19,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('cash_advances', function (Blueprint $table) {
-            $table->dropColumn('deduct_on');
+            $table->dropColumn(['release_date', 'deduct_on']);
         });
     }
 };
