@@ -13,6 +13,7 @@ class CashAdvance extends Model
     protected $fillable = [
         'employee_id',
         'amount',
+        'release_date',
         'reason',
         'deduct_on',
         'status',
@@ -23,6 +24,7 @@ class CashAdvance extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'release_date' => 'date',
         'deduct_on' => 'date',
         'deducted_at' => 'datetime',
     ];

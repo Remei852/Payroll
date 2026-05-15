@@ -354,12 +354,35 @@ class PayrollController extends Controller
     {
         $validated = $request->validate([
             'amount' => ['required', 'numeric', 'min:0.01'],
+            'release_date' => ['nullable', 'date'],
             'reason' => ['nullable', 'string', 'max:500'],
             'deduct_on' => ['nullable', 'date'],
+            'apply_to_period_id' => ['nullable', 'exists:payroll_periods,id'],
         ]);
 
         try {
             $advance = $this->cashAdvanceService->createAdvance($employee, $validated, auth()->user());
+            
+            // Auto-apply to payroll if we are in a payroll period context
+            if ($request->has('apply_to_period_id')) {
+                $period = PayrollPeriod::find($request->apply_to_period_id);
+                if ($period && $period->status === 'OPEN') {
+                    // Check if date matches or is blank
+                    $isMatchingDate = !$advance->deduct_on || 
+                                     ($advance->deduct_on >= $period->start_date && $advance->deduct_on <= $period->end_date);
+                    
+                    if ($isMatchingDate) {
+                        $payroll = Payroll::where('employee_id', $employee->id)
+                            ->where('payroll_period_id', $period->id)
+                            ->first();
+                        
+                        if ($payroll) {
+                            $this->cashAdvanceService->applyDeduction($advance, $payroll);
+                        }
+                    }
+                }
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Cash advance added successfully',

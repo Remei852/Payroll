@@ -29,6 +29,7 @@ class CashAdvanceService
 
         $advance = $employee->cashAdvances()->create([
             'amount' => $data['amount'],
+            'release_date' => $data['release_date'] ?? now()->toDateString(),
             'reason' => $data['reason'] ?? null,
             'deduct_on' => $data['deduct_on'] ?? null,
             'status' => 'Active',
@@ -113,6 +114,7 @@ class CashAdvanceService
     public function getRemainingAdvances(Employee $employee): Collection
     {
         return $employee->cashAdvances()
+            ->with('payrollPeriod')
             ->whereIn('status', ['Active', 'Deducted'])
             ->orderBy('created_at')
             ->get();

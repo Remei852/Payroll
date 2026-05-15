@@ -16,7 +16,12 @@ class EmployeeRepository
 
     public function findAll(?int $perPage = null): Collection|LengthAwarePaginator
     {
-        $query = Employee::with('department')->orderBy('last_name')->orderBy('first_name');
+        $query = Employee::with('department')
+            ->withCount(['cashAdvances as pending_advances_count' => function ($query) {
+                $query->where('status', 'Active');
+            }])
+            ->orderBy('last_name')
+            ->orderBy('first_name');
 
         if ($perPage) {
             return $query->paginate($perPage);

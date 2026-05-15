@@ -11,8 +11,8 @@ const fmtMin = (m) => {
 };
 
 // ─── Add Cash Advance modal ───────────────────────────────────────────────────
-function AddAdvanceModal({ employees, onClose, onSave }) {
-    const [form, setForm] = useState({ employee_id: '', amount: '', reason: '', deduct_on: '' });
+function AddAdvanceModal({ employees, periodId, onClose, onSave }) {
+    const [form, setForm] = useState({ employee_id: '', amount: '', reason: '', deduct_on: '', release_date: new Date().toISOString().split('T')[0] });
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
 
@@ -26,8 +26,10 @@ function AddAdvanceModal({ employees, onClose, onSave }) {
                 headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content },
                 body: JSON.stringify({
                     amount: parseFloat(form.amount),
+                    release_date: form.release_date || null,
                     reason: form.reason || null,
                     deduct_on: form.deduct_on || null,
+                    apply_to_period_id: periodId,
                 }),
             });
             const data = await res.json();
@@ -65,6 +67,12 @@ function AddAdvanceModal({ employees, onClose, onSave }) {
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
                     </div>
                     <div>
+                        <label className="mb-1 block text-xs font-medium text-slate-600">Release Date</label>
+                        <input required type="date" value={form.release_date}
+                            onChange={e => setForm(f => ({ ...f, release_date: e.target.value }))}
+                            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
+                    </div>
+                    <div>
                         <label className="mb-1 block text-xs font-medium text-slate-600">Reason <span className="text-slate-400">(optional)</span></label>
                         <input type="text" placeholder="e.g. Emergency" value={form.reason}
                             onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
@@ -72,12 +80,12 @@ function AddAdvanceModal({ employees, onClose, onSave }) {
                     </div>
                     <div>
                         <label className="mb-1 block text-xs font-medium text-slate-600">
-                            Deduct On <span className="text-slate-400">(leave blank to deduct this period)</span>
+                            Deduction Date <span className="text-slate-400">(leave blank to deduct in current period)</span>
                         </label>
                         <input type="date" value={form.deduct_on}
                             onChange={e => setForm(f => ({ ...f, deduct_on: e.target.value }))}
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-[#1E3A8A] focus:outline-none focus:ring-1 focus:ring-[#1E3A8A]" />
-                        <p className="mt-1 text-xs text-slate-400">Set a date in the next payroll period to defer the deduction.</p>
+                        <p className="mt-1 text-xs text-slate-400">The system uses this date to determine which payroll period will handle the deduction.</p>
                     </div>
                     {error && <p className="text-xs text-red-600">{error}</p>}
                     <div className="flex justify-end gap-2 pt-1">
@@ -156,7 +164,17 @@ function EmployeeRow({ payroll, periodStatus, isClosed, isSelected, onToggleSele
                     <button onClick={() => setExpanded(e => !e)} className="flex items-center gap-2 text-left">
                         <svg className={`h-3.5 w-3.5 text-slate-400 transition-transform flex-shrink-0 ${expanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/></svg>
                         <div>
-                            <p className="text-sm font-medium text-slate-900">{name}</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-slate-900">{name}</p>
+                                {activeAdvances.length > 0 && (
+                                    <span 
+                                        className="inline-flex items-center rounded bg-amber-50 px-1 py-0.5 text-[10px] font-bold text-amber-600 ring-1 ring-inset ring-amber-500/10"
+                                        title={`${activeAdvances.length} pending cash advance(s)`}
+                                    >
+                                        CA
+                                    </span>
+                                )}
+                            </div>
                             <p className="text-xs text-slate-400">{emp.employee_code}</p>
                         </div>
                     </button>
@@ -481,6 +499,7 @@ export default function PayrollPeriod({ period }) {
             {showAddAdvance && (
                 <AddAdvanceModal
                     employees={employees}
+                    periodId={period.id}
                     onClose={() => setShowAddAdvance(false)}
                     onSave={reload}
                 />

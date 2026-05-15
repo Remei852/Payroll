@@ -32,6 +32,7 @@ class EmployeeController extends Controller
                 'status' => $employee->employment_status,
                 'position' => $employee->position,
                 'hireDate' => $employee->hire_date?->format('Y-m-d'),
+                'pendingAdvancesCount' => (int) $employee->pending_advances_count,
             ];
         });
 
